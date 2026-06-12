@@ -19,6 +19,7 @@ from app.collectors.institutional.mock_institutional_collector import (
     MockInstitutionalCollector,
 )
 from app.collectors.market.mock_price_collector import MockPriceCollector
+from app.collectors.market.official_close_collector import OfficialClosePriceCollector
 from app.collectors.news.mock_news_collector import MockNewsCollector
 
 
@@ -30,6 +31,8 @@ class CollectorBundle:
     institutional: InstitutionalCollector
     financial: FinancialCollector
     news: NewsCollector
+    price_source: str = "mock"
+    other_sources: str = "mock"
 
 
 def get_collectors(provider: str = "mock") -> CollectorBundle:
@@ -43,5 +46,16 @@ def get_collectors(provider: str = "mock") -> CollectorBundle:
             institutional=MockInstitutionalCollector(),
             financial=MockFinancialCollector(),
             news=MockNewsCollector(),
+            price_source="mock",
+            other_sources="mock",
+        )
+    if provider == "official_close":
+        return CollectorBundle(
+            price=OfficialClosePriceCollector(),
+            institutional=MockInstitutionalCollector(),
+            financial=MockFinancialCollector(),
+            news=MockNewsCollector(),
+            price_source="twse_tpex_official",
+            other_sources="mock",
         )
     raise ValueError(f"Unknown data provider: {provider!r}")

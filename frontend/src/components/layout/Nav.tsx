@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, BarChart3, Layers, LineChart, Radar } from "lucide-react";
+import { Activity, BarChart3, FlaskConical, Layers, LineChart, Radar } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const LINKS = [
@@ -10,6 +10,7 @@ const LINKS = [
   { href: "/market", label: "大盤分析", icon: LineChart },
   { href: "/sectors", label: "熱門族群", icon: Layers },
   { href: "/stocks", label: "選股排行", icon: BarChart3 },
+  { href: "/predictions", label: "預測驗證", icon: FlaskConical },
 ];
 
 export function Nav() {

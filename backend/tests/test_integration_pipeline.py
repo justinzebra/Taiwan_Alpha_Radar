@@ -14,8 +14,9 @@ from sqlalchemy.orm import sessionmaker
 import app.models  # noqa: F401 - register tables on Base.metadata
 from app.database import Base, get_db
 from app.main import app
+from app.models import DailyPrice, Stock
 from app.services import queries
-from app.services.pipeline import run_daily_pipeline
+from app.services.pipeline import run_daily_pipeline, sync_universe
 
 AS_OF = date(2026, 6, 10)
 
@@ -82,6 +83,26 @@ def test_api_dashboard_endpoint(client):
     body = res.json()
     assert "market" in body
     assert len(body["top_stocks"]) == 10
+    assert body["data_status"]["price_source"] == "mock"
+    assert body["data_status"]["prediction_methodology"] == "technical_eod_v1"
+
+
+def test_api_backtest_endpoint(client):
+    res = client.get("/api/backtest")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["methodology"] == "technical_eod_v1"
+    assert {item["horizon_days"] for item in body["horizons"]} == {1, 3, 5, 10}
+
+
+def test_api_predictions_returns_latest_ranked_signals(client):
+    res = client.get("/api/predictions", params={"limit": 10})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["methodology"] == "technical_eod_v1"
+    assert len(body["items"]) == 10
+    assert [item["rank"] for item in body["items"]] == list(range(1, 11))
+    assert all(item["direction"] in {"偏多", "中性", "偏空"} for item in body["items"])
 
 
 def test_api_stocks_search_and_sort(client):
@@ -116,3 +137,28 @@ def test_top_ranked_stock_has_ai_report(client):
 def test_api_unknown_stock_returns_404(client):
     res = client.get("/api/stocks/9999")
     assert res.status_code == 404
+
+
+def test_pipeline_keeps_price_history_across_analysis_dates(db_session):
+    db = db_session()
+    try:
+        before = db.query(DailyPrice).count()
+        run_daily_pipeline(db, date(2026, 6, 11))
+        after = db.query(DailyPrice).count()
+        assert after > before
+    finally:
+        db.close()
+
+
+def test_sync_universe_updates_existing_market_metadata(db_session):
+    db = db_session()
+    try:
+        stock = db.get(Stock, "3324")
+        stock.market = "TWSE"
+        db.commit()
+
+        sync_universe(db)
+
+        assert db.get(Stock, "3324").market == "TPEx"
+    finally:
+        db.close()

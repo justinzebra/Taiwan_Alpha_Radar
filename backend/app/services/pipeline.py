@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from datetime import date
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.ai import get_report_engine
@@ -31,13 +31,17 @@ from app.collectors import get_collectors
 from app.config import settings
 from app.models import (
     AIReport,
+    DailyPrediction,
     DailyPrice,
+    DataSourceState,
     MarketScore,
     SectorScore,
     Stock,
     StockScore,
+    PredictionOutcome,
 )
 from app.domain.universe import UNIVERSE
+from app.services.backtest import build_predictions, evaluate_predictions
 
 logger = logging.getLogger(__name__)
 
@@ -47,9 +51,12 @@ AI_REPORT_TOP_N = 10
 
 def sync_universe(db: Session) -> None:
     """Ensure every universe stock exists in the ``stocks`` table."""
-    existing = {s.stock_id for s in db.query(Stock.stock_id).all()}
+    existing = {
+        stock.stock_id: stock for stock in db.execute(select(Stock)).scalars().all()
+    }
     for meta in UNIVERSE:
-        if meta.stock_id not in existing:
+        stock = existing.get(meta.stock_id)
+        if stock is None:
             db.add(
                 Stock(
                     stock_id=meta.stock_id,
@@ -61,30 +68,38 @@ def sync_universe(db: Session) -> None:
                     market_cap_billion=meta.market_cap_billion,
                 )
             )
+            continue
+        stock.name = meta.name
+        stock.name_en = meta.name_en
+        stock.sector = meta.sector
+        stock.theme = meta.theme
+        stock.market = meta.market
+        stock.market_cap_billion = meta.market_cap_billion
     db.commit()
 
 
 def _persist_prices(db: Session, engine: StockScoreEngine, as_of: date) -> None:
     """Persist the most recent ``price_history_to_store`` candles per stock."""
-    store_days = 60
-    db.execute(delete(DailyPrice))
+    store_days = settings.market_history_days
     for meta in UNIVERSE:
         candles = engine.collectors.price.fetch_history(
-            meta.stock_id, as_of, settings.seed_days_of_history
+            meta.stock_id, as_of, settings.market_history_days
         )
         for c in candles[-store_days:]:
-            db.add(
-                DailyPrice(
-                    stock_id=meta.stock_id,
-                    trade_date=c.trade_date,
-                    open=c.open,
-                    high=c.high,
-                    low=c.low,
-                    close=c.close,
-                    volume=c.volume,
-                    change_pct=c.change_pct,
-                )
-            )
+            row = db.execute(
+                select(DailyPrice)
+                .where(DailyPrice.stock_id == meta.stock_id)
+                .where(DailyPrice.trade_date == c.trade_date)
+            ).scalar_one_or_none()
+            if row is None:
+                row = DailyPrice(stock_id=meta.stock_id, trade_date=c.trade_date)
+                db.add(row)
+            row.open = c.open
+            row.high = c.high
+            row.low = c.low
+            row.close = c.close
+            row.volume = c.volume
+            row.change_pct = c.change_pct
     db.commit()
 
 
@@ -136,6 +151,9 @@ def _persist_market_score(
     engine: StockScoreEngine,
     scores: list[StockScoreResult],
     as_of: date,
+    *,
+    price_source: str,
+    other_sources: str,
 ) -> None:
     market = compute_market_score(engine.collectors, scores, as_of)
     db.execute(delete(MarketScore).where(MarketScore.score_date == as_of))
@@ -160,9 +178,35 @@ def _persist_market_score(
                 }
                 for i in market.indices
             ],
-            notes=market.notes,
+            notes={
+                **market.notes,
+                "price_source": price_source,
+                "other_sources": other_sources,
+                "prediction_methodology": "technical_eod_v1",
+            },
         )
     )
+    db.commit()
+
+
+def _prepare_data_source(db: Session, provider: str) -> None:
+    state = db.get(DataSourceState, "market_data_provider")
+    if state is not None and state.value == provider:
+        return
+    has_prices = db.execute(select(DailyPrice.id).limit(1)).scalar_one_or_none()
+    if has_prices is not None:
+        db.execute(delete(PredictionOutcome))
+        db.execute(delete(DailyPrediction))
+        db.execute(delete(AIReport))
+        db.execute(delete(StockScore))
+        db.execute(delete(SectorScore))
+        db.execute(delete(MarketScore))
+        db.execute(delete(DailyPrice))
+    if state is None:
+        state = DataSourceState(key="market_data_provider", value=provider)
+        db.add(state)
+    else:
+        state.value = provider
     db.commit()
 
 
@@ -190,23 +234,56 @@ def run_daily_pipeline(db: Session, as_of: date) -> dict:
     """Execute the full pipeline for ``as_of`` and return a run summary."""
     logger.info("Running daily pipeline for %s", as_of)
     sync_universe(db)
+    _prepare_data_source(db, settings.data_provider)
 
-    # Data source is independent of the AI provider; mock feed for v1.
-    collectors = get_collectors("mock")
-    engine = StockScoreEngine(collectors)
+    collectors = get_collectors(settings.data_provider)
+    engine = StockScoreEngine(
+        collectors,
+        history_days=min(settings.seed_days_of_history, settings.market_history_days),
+    )
 
-    scores = [r for meta in UNIVERSE if (r := engine.score(meta, as_of))]
+    latest = collectors.price.fetch_history(UNIVERSE[0].stock_id, as_of, 1)
+    if not latest:
+        raise RuntimeError(f"No close-price data available on or before {as_of}")
+    analysis_date = latest[-1].trade_date
+    scores = [r for meta in UNIVERSE if (r := engine.score(meta, analysis_date))]
 
-    _persist_prices(db, engine, as_of)
-    _persist_stock_scores(db, scores, as_of)
-    _persist_sector_scores(db, scores, as_of)
-    _persist_market_score(db, engine, scores, as_of)
-    _persist_ai_reports(db, scores, as_of)
+    _persist_prices(db, engine, analysis_date)
+    _persist_stock_scores(db, scores, analysis_date)
+    _persist_sector_scores(db, scores, analysis_date)
+    _persist_market_score(
+        db,
+        engine,
+        scores,
+        analysis_date,
+        price_source=collectors.price_source,
+        other_sources=collectors.other_sources,
+    )
+    _persist_ai_reports(db, scores, analysis_date)
+    predictions = build_predictions(
+        db,
+        lookback_days=settings.prediction_lookback_days,
+        data_source=collectors.price_source,
+    )
+    outcomes = evaluate_predictions(db)
+    last_run = db.get(DataSourceState, "pipeline_last_requested_date")
+    if last_run is None:
+        db.add(
+            DataSourceState(
+                key="pipeline_last_requested_date", value=as_of.isoformat()
+            )
+        )
+    else:
+        last_run.value = as_of.isoformat()
+    db.commit()
 
     summary = {
-        "as_of": as_of.isoformat(),
+        "as_of": analysis_date.isoformat(),
         "stocks_scored": len(scores),
         "ai_reports": min(AI_REPORT_TOP_N, len(scores)),
+        "price_source": collectors.price_source,
+        "predictions": predictions,
+        "evaluated_outcomes": outcomes,
     }
     logger.info("Pipeline complete: %s", summary)
     return summary

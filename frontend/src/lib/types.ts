@@ -79,6 +79,48 @@ export interface DashboardResponse {
   top_stocks: StockListItem[];
   hot_sectors: SectorItem[];
   score_distribution: ScoreBucket[];
+  data_status: {
+    price_source: string;
+    other_sources: string;
+    prediction_methodology: string;
+    price_data_is_real: boolean;
+    full_alpha_is_real: boolean;
+  };
+}
+
+export interface PredictionItem {
+  rank: number;
+  stock_id: string;
+  name: string;
+  signal_score: number;
+  direction: string;
+  confidence: number;
+  entry_close: number;
+}
+
+export interface PredictionListResponse {
+  as_of: string;
+  methodology: string;
+  data_source: string;
+  items: PredictionItem[];
+}
+
+export interface BacktestHorizon {
+  horizon_days: number;
+  evaluated_predictions: number;
+  top10_average_return_pct: number;
+  benchmark_return_pct: number;
+  top10_excess_return_pct: number;
+  top10_win_rate_pct: number;
+  direction_accuracy_pct: number;
+}
+
+export interface BacktestSummary {
+  methodology: string;
+  data_source: string;
+  prediction_start: string;
+  prediction_end: string;
+  horizons: BacktestHorizon[];
 }
 
 export interface DimensionDetail {

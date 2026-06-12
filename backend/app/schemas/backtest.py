@@ -1,0 +1,37 @@
+"""Backtest response schemas."""
+from pydantic import BaseModel
+
+
+class BacktestHorizon(BaseModel):
+    horizon_days: int
+    evaluated_predictions: int
+    top10_average_return_pct: float
+    benchmark_return_pct: float
+    top10_excess_return_pct: float
+    top10_win_rate_pct: float
+    direction_accuracy_pct: float
+
+
+class BacktestSummary(BaseModel):
+    methodology: str
+    data_source: str
+    prediction_start: str
+    prediction_end: str
+    horizons: list[BacktestHorizon]
+
+
+class PredictionItem(BaseModel):
+    rank: int
+    stock_id: str
+    name: str
+    signal_score: float
+    direction: str
+    confidence: float
+    entry_close: float
+
+
+class PredictionListResponse(BaseModel):
+    as_of: str
+    methodology: str
+    data_source: str
+    items: list[PredictionItem]

@@ -56,11 +56,11 @@ UNIVERSE: list[StockMeta] = [
     # --- 光通訊 ---
     StockMeta("3019", "亞光", "AOE", "光電", "光通訊", "TWSE", 95.0, 60.0),
     StockMeta("4979", "華星光", "Luxnet", "光電", "光通訊", "TPEx", 180.0, 35.0),
-    StockMeta("3450", "聯鈞", "Browave", "光電", "光通訊", "TPEx", 210.0, 40.0),
-    StockMeta("4977", "眾達-KY", "Eoptolink", "光電", "光通訊", "TPEx", 290.0, 45.0),
+    StockMeta("3450", "聯鈞", "Browave", "光電", "光通訊", "TWSE", 210.0, 40.0),
+    StockMeta("4977", "眾達-KY", "Eoptolink", "光電", "光通訊", "TWSE", 290.0, 45.0),
     # --- 散熱 ---
     StockMeta("3017", "奇鋐", "AVC", "電子零組件", "散熱", "TWSE", 720.0, 220.0),
-    StockMeta("3324", "雙鴻", "Auras", "電子零組件", "散熱", "TWSE", 560.0, 90.0),
+    StockMeta("3324", "雙鴻", "Auras", "電子零組件", "散熱", "TPEx", 560.0, 90.0),
     StockMeta("2421", "建準", "Sunon", "電子零組件", "散熱", "TWSE", 78.0, 60.0),
     # --- 金融 ---
     StockMeta("2881", "富邦金", "Fubon", "金融", "金融", "TWSE", 92.0, 1230.0),
@@ -76,7 +76,7 @@ UNIVERSE: list[StockMeta] = [
     StockMeta("2002", "中鋼", "CSC", "鋼鐵", "傳產", "TWSE", 23.0, 360.0),
     StockMeta("1101", "台泥", "TCC", "水泥", "傳產", "TWSE", 33.0, 230.0),
     # --- 電動車 / 綠能 ---
-    StockMeta("6531", "愛普", "Aprosys", "半導體", "電動車", "TPEx", 480.0, 30.0),
+    StockMeta("6531", "愛普", "Aprosys", "半導體", "電動車", "TWSE", 480.0, 30.0),
     StockMeta("1519", "華城", "Hwa Chuang", "電機機械", "電動車", "TWSE", 420.0, 150.0),
     StockMeta("1513", "中興電", "CHEM", "電機機械", "電動車", "TWSE", 220.0, 110.0),
     # --- 其他電子 / 網通 ---

@@ -5,6 +5,7 @@ Importing this package registers every model on the shared Base metadata so
 """
 from app.models.market import MarketScore
 from app.models.price import DailyPrice
+from app.models.prediction import DailyPrediction, DataSourceState, PredictionOutcome
 from app.models.report import AIReport
 from app.models.score import StockScore
 from app.models.sector import SectorScore
@@ -17,4 +18,7 @@ __all__ = [
     "SectorScore",
     "MarketScore",
     "AIReport",
+    "DailyPrediction",
+    "PredictionOutcome",
+    "DataSourceState",
 ]

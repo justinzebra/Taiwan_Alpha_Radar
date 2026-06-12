@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     cache_ttl_seconds: int = 300
 
+    # --- Market data ---
+    data_provider: str = "mock"  # "mock" | "official_close"
+    market_history_days: int = 180
+    prediction_lookback_days: int = 120
+
     # --- Scheduler ---
     enable_scheduler: bool = True
     # Daily run at 18:00 Asia/Taipei (after market close + settlement).

@@ -18,7 +18,7 @@ from app.models import (
     Stock,
     StockScore,
 )
-from app.schemas.dashboard import DashboardResponse, ScoreBucket
+from app.schemas.dashboard import DashboardResponse, DataStatus, ScoreBucket
 from app.schemas.market import IndexItem, MarketResponse
 from app.schemas.sector import SectorItem, SectorListResponse
 from app.schemas.stock import (
@@ -273,4 +273,11 @@ def get_dashboard(db: Session) -> DashboardResponse | None:
         top_stocks=top.items,
         hot_sectors=sectors.sectors[:6],
         score_distribution=distribution,
+        data_status=DataStatus(
+            price_source=market.notes.get("price_source", "unknown"),
+            other_sources=market.notes.get("other_sources", "unknown"),
+            prediction_methodology="technical_eod_v1",
+            price_data_is_real=market.notes.get("price_source") == "twse_tpex_official",
+            full_alpha_is_real=market.notes.get("other_sources") != "mock",
+        ),
     )

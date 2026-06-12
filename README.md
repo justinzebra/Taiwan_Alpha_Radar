@@ -23,7 +23,7 @@
 
 | 層 | 技術 |
 |----|------|
-| Frontend | Next.js 15 · TypeScript · TailwindCSS · shadcn 風格元件 · Recharts |
+| Frontend | Next.js 13 · TypeScript · TailwindCSS · shadcn 風格元件 · Recharts |
 | Backend | Python · FastAPI · SQLAlchemy 2.0 |
 | Database | PostgreSQL 16 |
 | Cache | Redis 7 |
@@ -41,15 +41,24 @@
 
 | 檔案 | 用途 | 需求 |
 |------|------|------|
-| `start.bat` | 啟動前後端（Docker） | 已安裝 Docker Desktop |
-| `stop.bat` | 停止前後端（Docker） | — |
-| `logs.bat` | 查看後端即時日誌（Docker） | — |
-| `start-local.bat` | 啟動前後端（免 Docker） | Python 3.11+ 與 Node 18+ |
-| `stop-local.bat` | 停止前後端（免 Docker） | — |
+| `start.bat` | 啟動前後端（Docker，Windows） | 已安裝 Docker Desktop |
+| `stop.bat` | 停止前後端（Docker，Windows） | — |
+| `logs.bat` | 查看後端即時日誌（Docker，Windows） | — |
+| `start-local.bat` | 啟動前後端（免 Docker，Windows） | Python 3.11+ 與 Node 18+ |
+| `stop-local.bat` | 停止前後端（免 Docker，Windows） | — |
+| `mac/start.sh` | 啟動前後端（Docker，macOS） | 已安裝 Docker Desktop |
+| `mac/stop.sh` | 停止前後端（Docker，macOS） | — |
+| `mac/start-local.sh` | 啟動前後端（免 Docker，macOS） | Python 3.11+ 與 Node 18+ |
+| `mac/stop-local.sh` | 停止前後端（免 Docker，macOS） | — |
+| `mac/start-local.command` | Finder 雙擊啟動（免 Docker，macOS） | Python 3.11+ 與 Node 18+ |
+| `mac/stop-local.command` | Finder 雙擊停止（免 Docker，macOS） | — |
 
-- **有 Docker** → 雙擊 `start.bat`（最乾淨，含 Postgres/Redis）。停止用 `stop.bat`。
-- **沒有 Docker** → 雙擊 `start-local.bat`：後端改用 **SQLite**（免裝 Postgres/Redis、首次自動建環境與灌資料），前端用 `npm run dev`。停止用 `stop-local.bat`。
-  - 前端需要 **Node 18 以上**（本專案為 Next.js 15）；腳本會自動檢查並提示。
+- **Windows + Docker** → 雙擊 `start.bat`（最乾淨，含 Postgres/Redis）。停止用 `stop.bat`。
+- **Windows 本機開發** → 雙擊 `start-local.bat`：後端使用 **SQLite + TWSE/TPEx 官方盤後價格**，前端用 `npm run dev`。停止用 `stop-local.bat`。
+- **macOS + Docker** → 於 Terminal 執行 `./mac/start.sh`。停止用 `./mac/stop.sh`。
+- **macOS 本機開發** → 於 Terminal 執行 `./mac/start-local.sh`：後端使用 **SQLite + TWSE/TPEx 官方盤後價格**，前端用 `npm run dev`。停止用 `./mac/stop-local.sh`。
+  - 要從 Finder 啟動，請雙擊 `mac/start-local.command`；停止時雙擊 `mac/stop-local.command`。
+  - 前端需要 **Node 18 以上**；腳本會自動檢查並提示。
 
 > 兩種方式都會在後端就緒後自動開啟瀏覽器到 http://localhost:3000。
 
@@ -64,8 +73,12 @@ docker compose up --build
 - 前端 → http://localhost:3000
 - 後端 API 文件 (Swagger) → http://localhost:8000/docs
 
-後端首次啟動會**自動建表並產生當日分析資料**（使用內建 mock 資料，無需任何 API key）。
+後端首次啟動會自動下載約 180 個交易日的 **TWSE／TPEx 官方盤後 OHLCV**，
+建立每日技術預測與 1／3／5／10 日 walk-forward 回測。首次下載可能需要數分鐘，無需 API key。
 第一次 `up` 後請等待 backend 日誌出現 `Pipeline complete` 再開啟前端。
+
+> 目前只有價格資料為官方真實資料；籌碼、財報、新聞與 AI 報告仍使用 mock。
+> 「預測驗證」頁的 `technical_eod_v1` 僅使用真實收盤 OHLCV，與混合資料的完整 Alpha Score 分開呈現。
 
 > 想用真實 LLM 產生報告？複製 `.env.example` 為 `.env`，設定
 > `AI_PROVIDER=openai` 與 `OPENAI_API_KEY=...`（或 `anthropic`）即可。
@@ -102,7 +115,7 @@ taiwan-alpha-radar/
 ├── backend/
 │   └── app/
 │       ├── domain/        # universe(台股清單) + simulator(確定性模擬)
-│       ├── collectors/    # 資料蒐集 ABC + Mock Provider (market/institutional/financial/news)
+│       ├── collectors/    # TWSE/TPEx 官方收盤價 + 其他維度 Mock Provider
 │       ├── alpha/         # 評分引擎 (Strategy Pattern)
 │       │   └── dimensions/  # technical/institutional/fundamental/thematic/risk
 │       ├── ai/            # AI 報告引擎 (Provider Pattern)
@@ -136,6 +149,8 @@ taiwan-alpha-radar/
 | GET | `/api/sectors` | 族群強度排行 |
 | GET | `/api/stocks` | 個股排行（`page`,`page_size`,`search`,`sort`,`theme`） |
 | GET | `/api/stocks/{stock_id}` | 個股完整分析 + AI 報告 |
+| GET | `/api/predictions` | 最新收盤後技術預測排行 |
+| GET | `/api/backtest` | 1／3／5／10 日 walk-forward 回測 |
 | POST | `/api/admin/run-pipeline` | 手動重跑當日分析（展示用） |
 | GET | `/health` | 健康檢查 |
 
@@ -166,10 +181,10 @@ pytest                      # 核心引擎測試（indicators / alpha / ai）
 
 ## 🛣️ 開發流程與未來擴充
 
-1. **接真實資料源** — 實作 `collectors/*` 的 ABC（FinMind、TWSE OpenAPI、券商 API），於 registry 切換。
-2. **回測模組** — pipeline 已支援任意 `as_of`，可擴充歷史回測與績效追蹤。
-3. **更多評分維度** — 新增 dimension class 即可。
-4. **使用者系統** — 自選股池、選股策略訂閱、每日推播。
+1. **真實籌碼資料** — 接入 TWSE／TPEx 三大法人與融資融券盤後資料。
+2. **真實基本面** — 接入公開資訊觀測站財報與月營收。
+3. **合法新聞來源** — 取代題材面的 mock 新聞。
+4. **模型驗證深化** — 納入交易成本、最大回撤與不同市場狀態切片。
 5. **資料庫遷移** — 導入 Alembic 取代啟動時 `create_all`。
 
 詳見 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
@@ -178,4 +193,5 @@ pytest                      # 核心引擎測試（indicators / alpha / ai）
 
 ## ⚠️ 免責聲明
 
-本平台目前使用**模擬資料**，所有評分與報告僅供系統展示與研究，**不構成任何投資建議**。
+價格與技術預測使用 TWSE／TPEx 官方盤後資料；籌碼、財報、新聞及完整 Alpha Score
+目前仍包含模擬資料。所有評分與回測僅供研究，**不構成任何投資建議**。

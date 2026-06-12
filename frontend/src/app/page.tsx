@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, Flame, Gauge, TrendingDown, TrendingUp } from "lucide-react";
+import { Activity, Database, Flame, Gauge, TrendingDown, TrendingUp } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { cn, dirColor, fmtNumber, fmtPct } from "@/lib/utils";
@@ -33,6 +33,27 @@ export default function DashboardPage() {
         </div>
         <h1 className="text-2xl font-semibold tracking-tight">市場儀表板</h1>
       </div>
+
+      <Card className="border-primary/30 bg-primary/5">
+        <CardContent className="flex flex-col gap-3 pt-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <Database className="mt-0.5 h-4 w-4 text-primary" />
+            <div>
+              <div className="text-sm font-medium">
+                價格資料：
+                {data.data_status.price_data_is_real ? "TWSE／TPEx 官方盤後資料" : "模擬資料"}
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                技術預測使用收盤 OHLCV；籌碼、財報與新聞目前仍為 mock，
+                完整 Alpha Score 尚不可視為全真實資料模型。
+              </p>
+            </div>
+          </div>
+          <a href="/predictions" className="text-xs text-primary hover:underline">
+            查看每日預測與回測 →
+          </a>
+        </CardContent>
+      </Card>
 
       {/* Top row: gauge + key stats */}
       <div className="grid gap-5 lg:grid-cols-3">

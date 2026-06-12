@@ -76,7 +76,7 @@ def _index_snapshot(collectors: CollectorBundle, spec: dict, as_of: date) -> Ind
         change_pct=last.change_pct,
         trend=trend,
         strength=round(strength, 1),
-        volume_billion=round(last.volume / 1_000_000, 1),
+        volume_billion=round(last.volume / 1_000_000_000, 1),
     )
 
 

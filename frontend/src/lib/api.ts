@@ -1,9 +1,11 @@
 import type {
   DashboardResponse,
+  BacktestSummary,
   MarketResponse,
   SectorListResponse,
   StockDetailResponse,
   StockListResponse,
+  PredictionListResponse,
 } from "./types";
 
 // Browser-side base URL (the fetch runs in the user's browser, so it must point
@@ -45,6 +47,9 @@ export const api = {
     return getJSON<StockListResponse>(`/stocks?${q.toString()}`);
   },
   stock: (id: string) => getJSON<StockDetailResponse>(`/stocks/${id}`),
+  predictions: (limit = 10) =>
+    getJSON<PredictionListResponse>(`/predictions?limit=${limit}`),
+  backtest: () => getJSON<BacktestSummary>("/backtest"),
   runPipeline: () =>
     getJSON<{ status: string }>("/admin/run-pipeline", { method: "POST" }),
 };
