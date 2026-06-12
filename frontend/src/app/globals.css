@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Taiwan Alpha Radar — design tokens.
+  Direction: dark luxury / terminal (Bloomberg + TradingView + Apple).
+  Dark is the default and only theme for v1; tokens live on :root so the whole
+  app reads from one place. Taiwan market convention: red = up, green = down.
+*/
+:root {
+  --background: 222 33% 6%;
+  --foreground: 210 20% 92%;
+
+  --card: 222 28% 9%;
+  --card-foreground: 210 20% 92%;
+
+  --muted: 222 20% 16%;
+  --muted-foreground: 215 16% 60%;
+
+  --primary: 199 89% 56%;
+  --primary-foreground: 222 47% 8%;
+
+  --border: 222 20% 16%;
+  --input: 222 20% 18%;
+  --ring: 199 89% 56%;
+
+  --bull: 0 84% 62%;      /* up = red */
+  --bear: 152 62% 45%;    /* down = green */
+  --accent: 199 89% 56%;  /* cyan-blue */
+  --gold: 41 88% 60%;
+
+  --radius: 0.75rem;
+
+  --font-sans: "Inter", "Noto Sans TC", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "tnum";
+}
+
+/* Subtle atmospheric backdrop — radial glows + grid, not a flat fill. */
+.app-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(60% 50% at 18% 0%, hsl(199 89% 56% / 0.10), transparent 60%),
+    radial-gradient(50% 40% at 90% 8%, hsl(266 80% 60% / 0.08), transparent 55%),
+    hsl(var(--background));
+}
+.app-backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(hsl(var(--border) / 0.35) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--border) / 0.35) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black, transparent 75%);
+  opacity: 0.35;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+
+/* Custom scrollbar for the terminal feel. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted));
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(215 16% 35%);
+}

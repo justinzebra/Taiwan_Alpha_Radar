@@ -1,0 +1,25 @@
+# --- Web framework ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# --- Data / settings ---
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# --- Database ---
+SQLAlchemy==2.0.36
+psycopg[binary]==3.2.3
+
+# --- Cache ---
+redis==5.2.1
+
+# --- Scheduler ---
+APScheduler==3.11.0
+
+# --- AI providers (optional at runtime; mock works without keys) ---
+openai==1.59.6
+anthropic==0.42.0
+
+# --- Dev / test ---
+pytest==8.3.4
+httpx==0.28.1
