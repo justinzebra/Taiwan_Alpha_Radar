@@ -105,6 +105,39 @@ export interface PredictionListResponse {
   items: PredictionItem[];
 }
 
+export interface DailyPredictionResultItem {
+  rank: number;
+  stock_id: string;
+  name: string;
+  signal_score: number;
+  direction: string;
+  confidence: number;
+  prediction_close: number;
+  result_open: number | null;
+  result_close: number;
+  return_pct: number;
+  open_to_close_pct: number | null;
+  excess_return_pct: number;
+  direction_correct: boolean;
+}
+
+export interface DailyPredictionResultResponse {
+  methodology: string;
+  data_source: string;
+  available_dates: string[];
+  prediction_date: string;
+  result_date: string;
+  evaluated_predictions: number;
+  positive_count: number;
+  average_return_pct: number;
+  benchmark_return_pct: number;
+  excess_return_pct: number;
+  win_rate_pct: number;
+  direction_accuracy_pct: number;
+  average_open_to_close_pct: number | null;
+  items: DailyPredictionResultItem[];
+}
+
 export interface BacktestHorizon {
   horizon_days: number;
   evaluated_predictions: number;

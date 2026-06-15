@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 import app.models  # noqa: F401
 from app.database import Base
 from app.models import DailyPrediction, DailyPrice, PredictionOutcome, Stock
-from app.services.backtest import build_predictions, evaluate_predictions, get_backtest_summary
+from app.services.backtest import (
+    build_predictions,
+    evaluate_predictions,
+    get_backtest_summary,
+    get_daily_prediction_results,
+)
 
 
 def _seed_prices(db: Session) -> None:
@@ -92,3 +97,23 @@ def test_rebuilding_predictions_is_idempotent():
         build_predictions(db, lookback_days=10)
 
         assert db.query(DailyPrediction).count() == first
+
+
+def test_daily_prediction_results_show_next_session_scorecard():
+    engine = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_prices(db)
+        build_predictions(db, lookback_days=20)
+        evaluate_predictions(db, horizons=(1,))
+
+        result = get_daily_prediction_results(db, limit=10)
+
+        assert result.available_dates
+        assert result.prediction_date
+        assert result.result_date
+        assert result.evaluated_predictions == 2
+        assert len(result.items) == 2
+        assert result.items[0].rank == 1
+        assert result.items[0].result_open is not None
+        assert result.items[0].open_to_close_pct is not None

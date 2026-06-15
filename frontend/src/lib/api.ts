@@ -1,6 +1,7 @@
 import type {
   DashboardResponse,
   BacktestSummary,
+  DailyPredictionResultResponse,
   MarketResponse,
   SectorListResponse,
   StockDetailResponse,
@@ -49,6 +50,13 @@ export const api = {
   stock: (id: string) => getJSON<StockDetailResponse>(`/stocks/${id}`),
   predictions: (limit = 10) =>
     getJSON<PredictionListResponse>(`/predictions?limit=${limit}`),
+  predictionResults: (date?: string, limit = 10) => {
+    const q = new URLSearchParams({ limit: String(limit) });
+    if (date) q.set("date", date);
+    return getJSON<DailyPredictionResultResponse>(
+      `/prediction-results?${q.toString()}`,
+    );
+  },
   backtest: () => getJSON<BacktestSummary>("/backtest"),
   runPipeline: () =>
     getJSON<{ status: string }>("/admin/run-pipeline", { method: "POST" }),

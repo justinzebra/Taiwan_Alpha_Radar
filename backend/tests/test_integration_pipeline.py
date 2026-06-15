@@ -105,6 +105,18 @@ def test_api_predictions_returns_latest_ranked_signals(client):
     assert all(item["direction"] in {"偏多", "中性", "偏空"} for item in body["items"])
 
 
+def test_api_prediction_results_returns_daily_scorecard(client):
+    res = client.get("/api/prediction-results", params={"limit": 10})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["methodology"] == "technical_eod_v1"
+    assert body["available_dates"]
+    assert body["prediction_date"]
+    assert body["result_date"]
+    assert len(body["items"]) == 10
+    assert all("direction_correct" in item for item in body["items"])
+
+
 def test_api_stocks_search_and_sort(client):
     res = client.get("/api/stocks", params={"search": "2330", "sort": "score"})
     assert res.status_code == 200

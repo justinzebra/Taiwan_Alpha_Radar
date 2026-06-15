@@ -4,7 +4,9 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 
-from sqlalchemy import delete, func, select
+from datetime import date
+
+from sqlalchemy import and_, delete, desc, func, select
 from sqlalchemy.orm import Session
 
 from app.alpha.base import StockContext
@@ -15,6 +17,8 @@ from app.models import DailyPrediction, DailyPrice, PredictionOutcome, Stock
 from app.schemas.backtest import (
     BacktestHorizon,
     BacktestSummary,
+    DailyPredictionResultItem,
+    DailyPredictionResultResponse,
     PredictionItem,
     PredictionListResponse,
 )
@@ -271,4 +275,146 @@ def get_latest_predictions(db: Session, limit: int = 10) -> PredictionListRespon
             )
             for prediction, stock in rows
         ],
+    )
+
+
+def get_daily_prediction_results(
+    db: Session,
+    *,
+    prediction_date: date | None = None,
+    limit: int = 10,
+) -> DailyPredictionResultResponse:
+    """Return one prediction day's next-session results and summary."""
+    available_dates = db.execute(
+        select(DailyPrediction.prediction_date)
+        .join(
+            PredictionOutcome,
+            PredictionOutcome.prediction_id == DailyPrediction.id,
+        )
+        .where(DailyPrediction.methodology == METHODOLOGY)
+        .where(PredictionOutcome.horizon_days == 1)
+        .distinct()
+        .order_by(desc(DailyPrediction.prediction_date))
+    ).scalars().all()
+    available_iso = [value.isoformat() for value in available_dates]
+    target_date = prediction_date or (available_dates[0] if available_dates else None)
+
+    if target_date is None:
+        return DailyPredictionResultResponse(
+            methodology=METHODOLOGY,
+            data_source=DATA_SOURCE,
+            available_dates=[],
+            prediction_date="",
+            result_date="",
+            evaluated_predictions=0,
+            positive_count=0,
+            average_return_pct=0,
+            benchmark_return_pct=0,
+            excess_return_pct=0,
+            win_rate_pct=0,
+            direction_accuracy_pct=0,
+            average_open_to_close_pct=None,
+            items=[],
+        )
+
+    rows = db.execute(
+        select(DailyPrediction, Stock, PredictionOutcome, DailyPrice)
+        .join(Stock, Stock.stock_id == DailyPrediction.stock_id)
+        .join(
+            PredictionOutcome,
+            and_(
+                PredictionOutcome.prediction_id == DailyPrediction.id,
+                PredictionOutcome.horizon_days == 1,
+            ),
+        )
+        .outerjoin(
+            DailyPrice,
+            and_(
+                DailyPrice.stock_id == DailyPrediction.stock_id,
+                DailyPrice.trade_date == PredictionOutcome.exit_date,
+            ),
+        )
+        .where(DailyPrediction.methodology == METHODOLOGY)
+        .where(DailyPrediction.prediction_date == target_date)
+        .order_by(DailyPrediction.rank)
+        .limit(limit)
+    ).all()
+
+    if not rows:
+        return DailyPredictionResultResponse(
+            methodology=METHODOLOGY,
+            data_source=DATA_SOURCE,
+            available_dates=available_iso,
+            prediction_date=target_date.isoformat(),
+            result_date="",
+            evaluated_predictions=0,
+            positive_count=0,
+            average_return_pct=0,
+            benchmark_return_pct=0,
+            excess_return_pct=0,
+            win_rate_pct=0,
+            direction_accuracy_pct=0,
+            average_open_to_close_pct=None,
+            items=[],
+        )
+
+    items = []
+    open_to_close_values = []
+    for prediction, stock, outcome, result_price in rows:
+        open_to_close = None
+        if result_price is not None and result_price.open > 0:
+            open_to_close = (outcome.exit_close / result_price.open - 1) * 100
+            open_to_close_values.append(open_to_close)
+        items.append(
+            DailyPredictionResultItem(
+                rank=prediction.rank,
+                stock_id=prediction.stock_id,
+                name=stock.name,
+                signal_score=prediction.signal_score,
+                direction=prediction.direction,
+                confidence=prediction.confidence,
+                prediction_close=prediction.entry_close,
+                result_open=result_price.open if result_price is not None else None,
+                result_close=outcome.exit_close,
+                return_pct=round(outcome.return_pct, 2),
+                open_to_close_pct=(
+                    round(open_to_close, 2) if open_to_close is not None else None
+                ),
+                excess_return_pct=round(outcome.excess_return_pct, 2),
+                direction_correct=outcome.direction_correct,
+            )
+        )
+
+    outcomes = [row[2] for row in rows]
+    count = len(outcomes)
+    return DailyPredictionResultResponse(
+        methodology=METHODOLOGY,
+        data_source=rows[0][0].data_source,
+        available_dates=available_iso,
+        prediction_date=target_date.isoformat(),
+        result_date=outcomes[0].exit_date.isoformat(),
+        evaluated_predictions=count,
+        positive_count=sum(outcome.return_pct > 0 for outcome in outcomes),
+        average_return_pct=round(
+            sum(outcome.return_pct for outcome in outcomes) / count, 2
+        ),
+        benchmark_return_pct=round(
+            sum(outcome.benchmark_return_pct for outcome in outcomes) / count, 2
+        ),
+        excess_return_pct=round(
+            sum(outcome.excess_return_pct for outcome in outcomes) / count, 2
+        ),
+        win_rate_pct=round(
+            sum(outcome.return_pct > 0 for outcome in outcomes) / count * 100, 1
+        ),
+        direction_accuracy_pct=round(
+            sum(outcome.direction_correct for outcome in outcomes) / count * 100,
+            1,
+        ),
+        average_open_to_close_pct=(
+            round(sum(open_to_close_values) / len(open_to_close_values), 2)
+            if open_to_close_values
+            else None
+        ),
+        items=items,
     )

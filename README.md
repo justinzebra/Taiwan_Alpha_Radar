@@ -187,7 +187,8 @@ pytest                      # 核心引擎測試（indicators / alpha / ai）
 4. **模型驗證深化** — 納入交易成本、最大回撤與不同市場狀態切片。
 5. **資料庫遷移** — 導入 Alembic 取代啟動時 `create_all`。
 
-詳見 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
+策略使用方式與計分細節請見 [`docs/RECOMMENDATION_STRATEGY.md`](docs/RECOMMENDATION_STRATEGY.md)。
+系統架構與設計決策請見 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
 ---
 

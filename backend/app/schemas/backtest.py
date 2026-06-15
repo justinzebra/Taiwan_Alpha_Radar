@@ -35,3 +35,36 @@ class PredictionListResponse(BaseModel):
     methodology: str
     data_source: str
     items: list[PredictionItem]
+
+
+class DailyPredictionResultItem(BaseModel):
+    rank: int
+    stock_id: str
+    name: str
+    signal_score: float
+    direction: str
+    confidence: float
+    prediction_close: float
+    result_open: float | None
+    result_close: float
+    return_pct: float
+    open_to_close_pct: float | None
+    excess_return_pct: float
+    direction_correct: bool
+
+
+class DailyPredictionResultResponse(BaseModel):
+    methodology: str
+    data_source: str
+    available_dates: list[str]
+    prediction_date: str
+    result_date: str
+    evaluated_predictions: int
+    positive_count: int
+    average_return_pct: float
+    benchmark_return_pct: float
+    excess_return_pct: float
+    win_rate_pct: float
+    direction_accuracy_pct: float
+    average_open_to_close_pct: float | None
+    items: list[DailyPredictionResultItem]
