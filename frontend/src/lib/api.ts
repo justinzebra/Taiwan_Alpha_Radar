@@ -9,6 +9,18 @@ import type {
   PredictionListResponse,
 } from "./types";
 
+type RunPipelineResponse = {
+  status: string;
+  summary?: {
+    as_of: string;
+    stocks_scored: number;
+    ai_reports: number;
+    price_source: string;
+    predictions: number;
+    evaluated_outcomes: number;
+  };
+};
+
 // Browser-side base URL (the fetch runs in the user's browser, so it must point
 // at the host-published backend port, not the internal docker hostname).
 const API_BASE =
@@ -59,7 +71,7 @@ export const api = {
   },
   backtest: () => getJSON<BacktestSummary>("/backtest"),
   runPipeline: () =>
-    getJSON<{ status: string }>("/admin/run-pipeline", { method: "POST" }),
+    getJSON<RunPipelineResponse>("/admin/run-pipeline", { method: "POST" }),
 };
 
 export { API_BASE };

@@ -1,11 +1,13 @@
 "use client";
 
-import { Activity, Database, Flame, Gauge, TrendingDown, TrendingUp } from "lucide-react";
+import { useState } from "react";
+import { Activity, Database, Flame, Gauge, RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { cn, dirColor, fmtNumber, fmtPct } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { SectionTitle } from "@/components/common/SectionTitle";
 import { ErrorPanel, LoadingPanel } from "@/components/common/States";
 import { MarketGauge } from "@/components/charts/MarketGauge";
@@ -15,7 +17,26 @@ import { LeaderboardTable } from "@/components/dashboard/LeaderboardTable";
 import { HotSectors } from "@/components/dashboard/HotSectors";
 
 export default function DashboardPage() {
-  const { data, loading, error } = useApi(() => api.dashboard());
+  const { data, loading, error, reload } = useApi(() => api.dashboard());
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
+
+  async function handleManualRefresh() {
+    setRefreshing(true);
+    setRefreshMessage(null);
+    try {
+      const result = await api.runPipeline();
+      const asOf = result.summary?.as_of ? `，最新交易日 ${result.summary.as_of}` : "";
+      setRefreshMessage(`刷新完成${asOf}`);
+      reload();
+    } catch (err) {
+      setRefreshMessage(
+        err instanceof Error ? `刷新失敗：${err.message}` : "刷新失敗",
+      );
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   if (loading) return <LoadingPanel />;
   if (error || !data) return <ErrorPanel message={error ?? "無資料"} />;
@@ -35,7 +56,7 @@ export default function DashboardPage() {
       </div>
 
       <Card className="border-primary/30 bg-primary/5">
-        <CardContent className="flex flex-col gap-3 pt-5 sm:flex-row sm:items-center sm:justify-between">
+        <CardContent className="flex flex-col gap-4 pt-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-start gap-3">
             <Database className="mt-0.5 h-4 w-4 text-primary" />
             <div>
@@ -47,11 +68,33 @@ export default function DashboardPage() {
                 技術預測使用收盤 OHLCV；籌碼、財報與新聞目前仍為 mock，
                 完整 Alpha Score 尚不可視為全真實資料模型。
               </p>
+              {refreshMessage ? (
+                <p
+                  className={cn(
+                    "mt-2 text-xs",
+                    refreshMessage.startsWith("刷新失敗") ? "text-bear" : "text-bull",
+                  )}
+                >
+                  {refreshMessage}
+                </p>
+              ) : null}
             </div>
           </div>
-          <a href="/predictions" className="text-xs text-primary hover:underline">
-            查看每日預測與回測 →
-          </a>
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleManualRefresh}
+              disabled={refreshing}
+              aria-label="手動刷新收盤資料與勝率"
+            >
+              <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
+              {refreshing ? "刷新中" : "手動刷新"}
+            </Button>
+            <a href="/predictions" className="text-xs text-primary hover:underline">
+              查看每日預測與回測 →
+            </a>
+          </div>
         </CardContent>
       </Card>
 
