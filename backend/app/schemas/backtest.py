@@ -24,16 +24,25 @@ class PredictionItem(BaseModel):
     rank: int
     stock_id: str
     name: str
+    theme: str
     signal_score: float
     direction: str
     confidence: float
     entry_close: float
 
 
+class PredictionGroupOption(BaseModel):
+    value: str
+    label: str
+    count: int
+
+
 class PredictionListResponse(BaseModel):
     as_of: str
     methodology: str
     data_source: str
+    selected_group: str
+    available_groups: list[PredictionGroupOption]
     items: list[PredictionItem]
 
 
@@ -41,6 +50,7 @@ class DailyPredictionResultItem(BaseModel):
     rank: int
     stock_id: str
     name: str
+    theme: str
     signal_score: float
     direction: str
     confidence: float
@@ -56,6 +66,8 @@ class DailyPredictionResultItem(BaseModel):
 class DailyPredictionResultResponse(BaseModel):
     methodology: str
     data_source: str
+    selected_group: str
+    available_groups: list[PredictionGroupOption]
     available_dates: list[str]
     prediction_date: str
     result_date: str

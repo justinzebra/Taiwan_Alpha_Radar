@@ -60,11 +60,15 @@ export const api = {
     return getJSON<StockListResponse>(`/stocks?${q.toString()}`);
   },
   stock: (id: string) => getJSON<StockDetailResponse>(`/stocks/${id}`),
-  predictions: (limit = 10) =>
-    getJSON<PredictionListResponse>(`/predictions?limit=${limit}`),
-  predictionResults: (date?: string, limit = 10) => {
+  predictions: (limit = 10, theme?: string) => {
+    const q = new URLSearchParams({ limit: String(limit) });
+    if (theme) q.set("theme", theme);
+    return getJSON<PredictionListResponse>(`/predictions?${q.toString()}`);
+  },
+  predictionResults: (date?: string, limit = 10, theme?: string) => {
     const q = new URLSearchParams({ limit: String(limit) });
     if (date) q.set("date", date);
+    if (theme) q.set("theme", theme);
     return getJSON<DailyPredictionResultResponse>(
       `/prediction-results?${q.toString()}`,
     );

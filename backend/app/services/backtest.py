@@ -19,6 +19,7 @@ from app.schemas.backtest import (
     BacktestSummary,
     DailyPredictionResultItem,
     DailyPredictionResultResponse,
+    PredictionGroupOption,
     PredictionItem,
     PredictionListResponse,
 )
@@ -28,6 +29,41 @@ DATA_SOURCE = "twse_tpex_official"
 
 _EMPTY_FLOW = InstitutionalFlow(0, 0, 0, 0, 0)
 _EMPTY_FUNDAMENTALS = Fundamentals(0, 0, 0, 0, 0, 0, 0)
+
+
+def _normalize_group(theme: str | None) -> str:
+    return (theme or "").strip()
+
+
+def _group_options(
+    db: Session,
+    *,
+    prediction_date: date,
+    only_evaluated: bool = False,
+) -> list[PredictionGroupOption]:
+    query = (
+        select(Stock.theme, func.count(DailyPrediction.id))
+        .join(DailyPrediction, DailyPrediction.stock_id == Stock.stock_id)
+        .where(DailyPrediction.methodology == METHODOLOGY)
+        .where(DailyPrediction.prediction_date == prediction_date)
+        .group_by(Stock.theme)
+        .order_by(Stock.theme)
+    )
+    if only_evaluated:
+        query = query.join(
+            PredictionOutcome,
+            and_(
+                PredictionOutcome.prediction_id == DailyPrediction.id,
+                PredictionOutcome.horizon_days == 1,
+            ),
+        )
+
+    rows = db.execute(query).all()
+    total = sum(count for _, count in rows)
+    return [PredictionGroupOption(value="", label="綜合", count=total)] + [
+        PredictionGroupOption(value=theme, label=theme, count=count)
+        for theme, count in rows
+    ]
 
 
 def _direction(score: float) -> str:
@@ -241,39 +277,54 @@ def get_backtest_summary(db: Session) -> BacktestSummary:
     )
 
 
-def get_latest_predictions(db: Session, limit: int = 10) -> PredictionListResponse:
+def get_latest_predictions(
+    db: Session,
+    limit: int = 10,
+    theme: str | None = None,
+) -> PredictionListResponse:
     latest = db.execute(
         select(func.max(DailyPrediction.prediction_date)).where(
             DailyPrediction.methodology == METHODOLOGY
         )
     ).scalar_one_or_none()
+    selected_group = _normalize_group(theme)
     if latest is None:
         return PredictionListResponse(
-            as_of="", methodology=METHODOLOGY, data_source=DATA_SOURCE, items=[]
+            as_of="",
+            methodology=METHODOLOGY,
+            data_source=DATA_SOURCE,
+            selected_group=selected_group,
+            available_groups=[],
+            items=[],
         )
-    rows = db.execute(
+    query = (
         select(DailyPrediction, Stock)
         .join(Stock, Stock.stock_id == DailyPrediction.stock_id)
         .where(DailyPrediction.methodology == METHODOLOGY)
         .where(DailyPrediction.prediction_date == latest)
         .order_by(DailyPrediction.rank)
-        .limit(limit)
-    ).all()
+    )
+    if selected_group:
+        query = query.where(Stock.theme == selected_group)
+    rows = db.execute(query.limit(limit)).all()
     return PredictionListResponse(
         as_of=latest.isoformat(),
         methodology=METHODOLOGY,
         data_source=rows[0][0].data_source if rows else DATA_SOURCE,
+        selected_group=selected_group,
+        available_groups=_group_options(db, prediction_date=latest),
         items=[
             PredictionItem(
-                rank=prediction.rank,
+                rank=rank,
                 stock_id=prediction.stock_id,
                 name=stock.name,
+                theme=stock.theme,
                 signal_score=prediction.signal_score,
                 direction=prediction.direction,
                 confidence=prediction.confidence,
                 entry_close=prediction.entry_close,
             )
-            for prediction, stock in rows
+            for rank, (prediction, stock) in enumerate(rows, 1)
         ],
     )
 
@@ -283,16 +334,20 @@ def get_daily_prediction_results(
     *,
     prediction_date: date | None = None,
     limit: int = 10,
+    theme: str | None = None,
 ) -> DailyPredictionResultResponse:
     """Return one prediction day's next-session results and summary."""
+    selected_group = _normalize_group(theme)
     available_dates = db.execute(
         select(DailyPrediction.prediction_date)
+        .join(Stock, Stock.stock_id == DailyPrediction.stock_id)
         .join(
             PredictionOutcome,
             PredictionOutcome.prediction_id == DailyPrediction.id,
         )
         .where(DailyPrediction.methodology == METHODOLOGY)
         .where(PredictionOutcome.horizon_days == 1)
+        .where(True if not selected_group else Stock.theme == selected_group)
         .distinct()
         .order_by(desc(DailyPrediction.prediction_date))
     ).scalars().all()
@@ -303,6 +358,8 @@ def get_daily_prediction_results(
         return DailyPredictionResultResponse(
             methodology=METHODOLOGY,
             data_source=DATA_SOURCE,
+            selected_group=selected_group,
+            available_groups=[],
             available_dates=[],
             prediction_date="",
             result_date="",
@@ -336,6 +393,7 @@ def get_daily_prediction_results(
         )
         .where(DailyPrediction.methodology == METHODOLOGY)
         .where(DailyPrediction.prediction_date == target_date)
+        .where(True if not selected_group else Stock.theme == selected_group)
         .order_by(DailyPrediction.rank)
         .limit(limit)
     ).all()
@@ -344,6 +402,10 @@ def get_daily_prediction_results(
         return DailyPredictionResultResponse(
             methodology=METHODOLOGY,
             data_source=DATA_SOURCE,
+            selected_group=selected_group,
+            available_groups=_group_options(
+                db, prediction_date=target_date, only_evaluated=True
+            ),
             available_dates=available_iso,
             prediction_date=target_date.isoformat(),
             result_date="",
@@ -358,18 +420,34 @@ def get_daily_prediction_results(
             items=[],
         )
 
+    all_group_rows = db.execute(
+        select(DailyPrediction, PredictionOutcome)
+        .join(Stock, Stock.stock_id == DailyPrediction.stock_id)
+        .join(
+            PredictionOutcome,
+            and_(
+                PredictionOutcome.prediction_id == DailyPrediction.id,
+                PredictionOutcome.horizon_days == 1,
+            ),
+        )
+        .where(DailyPrediction.methodology == METHODOLOGY)
+        .where(DailyPrediction.prediction_date == target_date)
+        .where(True if not selected_group else Stock.theme == selected_group)
+    ).all()
+
     items = []
     open_to_close_values = []
-    for prediction, stock, outcome, result_price in rows:
+    for rank, (prediction, stock, outcome, result_price) in enumerate(rows, 1):
         open_to_close = None
         if result_price is not None and result_price.open > 0:
             open_to_close = (outcome.exit_close / result_price.open - 1) * 100
             open_to_close_values.append(open_to_close)
         items.append(
             DailyPredictionResultItem(
-                rank=prediction.rank,
+                rank=rank,
                 stock_id=prediction.stock_id,
                 name=stock.name,
+                theme=stock.theme,
                 signal_score=prediction.signal_score,
                 direction=prediction.direction,
                 confidence=prediction.confidence,
@@ -385,30 +463,47 @@ def get_daily_prediction_results(
             )
         )
 
-    outcomes = [row[2] for row in rows]
+    outcomes = [row[1] for row in all_group_rows]
+    displayed_outcomes = [row[2] for row in rows]
     count = len(outcomes)
     return DailyPredictionResultResponse(
         methodology=METHODOLOGY,
         data_source=rows[0][0].data_source,
+        selected_group=selected_group,
+        available_groups=_group_options(
+            db, prediction_date=target_date, only_evaluated=True
+        ),
         available_dates=available_iso,
         prediction_date=target_date.isoformat(),
-        result_date=outcomes[0].exit_date.isoformat(),
-        evaluated_predictions=count,
-        positive_count=sum(outcome.return_pct > 0 for outcome in outcomes),
+        result_date=displayed_outcomes[0].exit_date.isoformat(),
+        evaluated_predictions=len(displayed_outcomes),
+        positive_count=sum(outcome.return_pct > 0 for outcome in displayed_outcomes),
         average_return_pct=round(
-            sum(outcome.return_pct for outcome in outcomes) / count, 2
+            sum(outcome.return_pct for outcome in displayed_outcomes)
+            / len(displayed_outcomes),
+            2,
         ),
         benchmark_return_pct=round(
-            sum(outcome.benchmark_return_pct for outcome in outcomes) / count, 2
+            sum(outcome.return_pct for outcome in outcomes) / count,
+            2,
         ),
         excess_return_pct=round(
-            sum(outcome.excess_return_pct for outcome in outcomes) / count, 2
+            sum(outcome.return_pct for outcome in displayed_outcomes)
+            / len(displayed_outcomes)
+            - sum(outcome.return_pct for outcome in outcomes)
+            / count,
+            2,
         ),
         win_rate_pct=round(
-            sum(outcome.return_pct > 0 for outcome in outcomes) / count * 100, 1
+            sum(outcome.return_pct > 0 for outcome in displayed_outcomes)
+            / len(displayed_outcomes)
+            * 100,
+            1,
         ),
         direction_accuracy_pct=round(
-            sum(outcome.direction_correct for outcome in outcomes) / count * 100,
+            sum(outcome.direction_correct for outcome in displayed_outcomes)
+            / len(displayed_outcomes)
+            * 100,
             1,
         ),
         average_open_to_close_pct=(

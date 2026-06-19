@@ -92,16 +92,25 @@ export interface PredictionItem {
   rank: number;
   stock_id: string;
   name: string;
+  theme: string;
   signal_score: number;
   direction: string;
   confidence: number;
   entry_close: number;
 }
 
+export interface PredictionGroupOption {
+  value: string;
+  label: string;
+  count: number;
+}
+
 export interface PredictionListResponse {
   as_of: string;
   methodology: string;
   data_source: string;
+  selected_group: string;
+  available_groups: PredictionGroupOption[];
   items: PredictionItem[];
 }
 
@@ -109,6 +118,7 @@ export interface DailyPredictionResultItem {
   rank: number;
   stock_id: string;
   name: string;
+  theme: string;
   signal_score: number;
   direction: string;
   confidence: number;
@@ -124,6 +134,8 @@ export interface DailyPredictionResultItem {
 export interface DailyPredictionResultResponse {
   methodology: string;
   data_source: string;
+  selected_group: string;
+  available_groups: PredictionGroupOption[];
   available_dates: string[];
   prediction_date: string;
   result_date: string;

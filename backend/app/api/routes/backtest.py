@@ -27,19 +27,22 @@ def read_backtest(db: Session = Depends(get_db)) -> BacktestSummary:
 @router.get("/predictions", response_model=PredictionListResponse)
 def read_predictions(
     limit: int = Query(10, ge=1, le=100),
+    theme: str | None = Query(None),
     db: Session = Depends(get_db),
 ) -> PredictionListResponse:
-    return get_latest_predictions(db, limit=limit)
+    return get_latest_predictions(db, limit=limit, theme=theme)
 
 
 @router.get("/prediction-results", response_model=DailyPredictionResultResponse)
 def read_prediction_results(
     prediction_date: date | None = Query(None, alias="date"),
     limit: int = Query(10, ge=1, le=100),
+    theme: str | None = Query(None),
     db: Session = Depends(get_db),
 ) -> DailyPredictionResultResponse:
     return get_daily_prediction_results(
         db,
         prediction_date=prediction_date,
         limit=limit,
+        theme=theme,
     )

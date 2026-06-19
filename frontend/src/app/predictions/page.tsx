@@ -15,12 +15,48 @@ import { cn, dirColor, fmtNumber, fmtPct, scoreColor } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorPanel, LoadingPanel } from "@/components/common/States";
+import type { PredictionGroupOption } from "@/lib/types";
 
-function DailyScorecard() {
+function GroupTabs({
+  groups,
+  selectedGroup,
+  onSelect,
+}: {
+  groups: PredictionGroupOption[];
+  selectedGroup: string;
+  onSelect: (group: string) => void;
+}) {
+  if (groups.length <= 1) return null;
+  return (
+    <div className="flex gap-2 overflow-x-auto rounded-lg border border-border/60 bg-card/50 p-2">
+      {groups.map((group) => {
+        const active = selectedGroup === group.value;
+        return (
+          <button
+            key={group.value || "all"}
+            type="button"
+            onClick={() => onSelect(group.value)}
+            className={cn(
+              "shrink-0 rounded-md px-3 py-2 text-sm transition-colors",
+              active
+                ? "bg-primary/15 text-primary ring-1 ring-primary/30"
+                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+            )}
+          >
+            {group.label}
+            <span className="ml-1 tnum text-xs opacity-70">({group.count})</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function DailyScorecard({ selectedGroup }: { selectedGroup: string }) {
   const [selectedDate, setSelectedDate] = useState("");
   const results = useApi(
-    () => api.predictionResults(selectedDate || undefined, 10),
-    [selectedDate],
+    () => api.predictionResults(selectedDate || undefined, 10, selectedGroup),
+    [selectedDate, selectedGroup],
   );
 
   if (results.loading) return <LoadingPanel label="載入每日對答案…" />;
@@ -52,6 +88,7 @@ function DailyScorecard() {
             </CardTitle>
             <p className="mt-1 text-xs text-muted-foreground">
               {data.prediction_date} 收盤預測 → {data.result_date} 收盤結果
+              {data.selected_group ? ` · ${data.selected_group}` : " · 綜合"}
             </p>
           </div>
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -89,13 +126,17 @@ function DailyScorecard() {
             </div>
           </div>
           <div className="rounded-lg border border-border/60 bg-background/40 p-3">
-            <div className="text-xs text-muted-foreground">Top 10 平均</div>
+            <div className="text-xs text-muted-foreground">
+              {data.selected_group ? "族群平均" : "Top 10 平均"}
+            </div>
             <div className={cn("mt-1 tnum text-xl font-semibold", dirColor(data.average_return_pct))}>
               {fmtPct(data.average_return_pct)}
             </div>
           </div>
           <div className="rounded-lg border border-border/60 bg-background/40 p-3">
-            <div className="text-xs text-muted-foreground">相對股票池</div>
+            <div className="text-xs text-muted-foreground">
+              {data.selected_group ? "相對同族群" : "相對股票池"}
+            </div>
             <div className={cn("mt-1 tnum text-xl font-semibold", dirColor(data.excess_return_pct))}>
               {fmtPct(data.excess_return_pct)}
             </div>
@@ -124,6 +165,7 @@ function DailyScorecard() {
               <tr className="text-left text-xs text-muted-foreground">
                 <th className="px-3 py-2">#</th>
                 <th className="px-3 py-2">股票</th>
+                <th className="px-3 py-2">族群</th>
                 <th className="px-3 py-2 text-right">訊號</th>
                 <th className="px-3 py-2 text-right">方向</th>
                 <th className="px-3 py-2 text-right">預測日收盤</th>
@@ -145,6 +187,9 @@ function DailyScorecard() {
                     <span className="ml-2 tnum text-xs text-muted-foreground">
                       {item.stock_id}
                     </span>
+                  </td>
+                  <td className="px-3 py-3 text-xs text-muted-foreground">
+                    {item.theme}
                   </td>
                   <td className={cn("px-3 py-3 text-right tnum font-semibold", scoreColor(item.signal_score))}>
                     {item.signal_score.toFixed(1)}
@@ -186,7 +231,11 @@ function DailyScorecard() {
 }
 
 export default function PredictionsPage() {
-  const predictions = useApi(() => api.predictions(10));
+  const [selectedGroup, setSelectedGroup] = useState("");
+  const predictions = useApi(
+    () => api.predictions(10, selectedGroup),
+    [selectedGroup],
+  );
   const backtest = useApi(() => api.backtest());
 
   if (predictions.loading || backtest.loading) return <LoadingPanel />;
@@ -218,9 +267,20 @@ export default function PredictionsPage() {
         </CardContent>
       </Card>
 
+      <GroupTabs
+        groups={predictions.data.available_groups}
+        selectedGroup={selectedGroup}
+        onSelect={setSelectedGroup}
+      />
+
       <Card>
         <CardHeader>
-          <CardTitle>下一交易日觀察名單</CardTitle>
+          <CardTitle>
+            下一交易日觀察名單
+            <span className="ml-2 text-sm font-normal text-muted-foreground">
+              {predictions.data.selected_group || "綜合"}
+            </span>
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -229,6 +289,7 @@ export default function PredictionsPage() {
                 <tr className="text-left text-xs text-muted-foreground">
                   <th className="px-3 py-2">#</th>
                   <th className="px-3 py-2">股票</th>
+                  <th className="px-3 py-2">族群</th>
                   <th className="px-3 py-2 text-right">收盤</th>
                   <th className="px-3 py-2 text-right">技術訊號</th>
                   <th className="px-3 py-2 text-right">方向</th>
@@ -244,6 +305,9 @@ export default function PredictionsPage() {
                         {item.name}
                       </Link>
                       <span className="ml-2 tnum text-xs text-muted-foreground">{item.stock_id}</span>
+                    </td>
+                    <td className="px-3 py-3 text-xs text-muted-foreground">
+                      {item.theme}
                     </td>
                     <td className="px-3 py-3 text-right tnum">{fmtNumber(item.entry_close)}</td>
                     <td className={cn("px-3 py-3 text-right tnum font-semibold", scoreColor(item.signal_score))}>
@@ -263,7 +327,7 @@ export default function PredictionsPage() {
         </CardContent>
       </Card>
 
-      <DailyScorecard />
+      <DailyScorecard key={selectedGroup || "all"} selectedGroup={selectedGroup} />
 
       <Card>
         <CardHeader>
