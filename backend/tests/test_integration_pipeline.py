@@ -153,6 +153,23 @@ def test_api_predictions_returns_latest_ranked_signals(client):
     assert all("adjusted_score" in item for item in v2_body["items"])
     assert all(item["quality_tag"] for item in v2_body["items"])
 
+    topic = client.get(
+        "/api/predictions",
+        params={
+            "limit": 10,
+            "methodology": "technical_eod_v2_candidate",
+            "theme": "topic:記憶體",
+        },
+    )
+    assert topic.status_code == 200
+    topic_body = topic.json()
+    assert topic_body["selected_group"] == "topic:記憶體"
+    assert topic_body["items"]
+    assert any(
+        group["value"] == "topic:記憶體"
+        for group in topic_body["available_groups"]
+    )
+
 
 def test_api_prediction_results_returns_daily_scorecard(client):
     res = client.get("/api/prediction-results", params={"limit": 10})

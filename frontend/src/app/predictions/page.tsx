@@ -52,6 +52,10 @@ function regimeLabel(value: string | null) {
   return value ? REGIME_LABELS[value] ?? value : "-";
 }
 
+function groupLabel(value: string) {
+  return value.startsWith("topic:") ? value.replace("topic:", "") : value;
+}
+
 function formatTimestamp(value: string | null) {
   if (!value) return "-";
   return value.replace("T", " ").slice(0, 19);
@@ -67,27 +71,44 @@ function GroupTabs({
   onSelect: (group: string) => void;
 }) {
   if (groups.length <= 1) return null;
+  const baseGroups = groups.filter((group) => !group.value.startsWith("topic:"));
+  const topicGroups = groups.filter((group) => group.value.startsWith("topic:"));
+  const renderButtons = (items: PredictionGroupOption[]) =>
+    items.map((group) => {
+      const active = selectedGroup === group.value;
+      return (
+        <button
+          key={group.value || "all"}
+          type="button"
+          onClick={() => onSelect(group.value)}
+          className={cn(
+            "shrink-0 rounded-md px-3 py-2 text-sm transition-colors",
+            active
+              ? "bg-primary/15 text-primary ring-1 ring-primary/30"
+              : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+          )}
+        >
+          {group.label}
+          <span className="ml-1 tnum text-xs opacity-70">({group.count})</span>
+        </button>
+      );
+    });
   return (
-    <div className="flex gap-2 overflow-x-auto rounded-lg border border-border/60 bg-card/50 p-2">
-      {groups.map((group) => {
-        const active = selectedGroup === group.value;
-        return (
-          <button
-            key={group.value || "all"}
-            type="button"
-            onClick={() => onSelect(group.value)}
-            className={cn(
-              "shrink-0 rounded-md px-3 py-2 text-sm transition-colors",
-              active
-                ? "bg-primary/15 text-primary ring-1 ring-primary/30"
-                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-            )}
-          >
-            {group.label}
-            <span className="ml-1 tnum text-xs opacity-70">({group.count})</span>
-          </button>
-        );
-      })}
+    <div className="space-y-2">
+      <div className="flex gap-2 overflow-x-auto rounded-lg border border-border/60 bg-card/50 p-2">
+        <span className="shrink-0 px-2 py-2 text-xs text-muted-foreground">
+          族群
+        </span>
+        {renderButtons(baseGroups)}
+      </div>
+      {topicGroups.length ? (
+        <div className="flex gap-2 overflow-x-auto rounded-lg border border-gold/30 bg-gold/5 p-2">
+          <span className="shrink-0 px-2 py-2 text-xs text-gold">
+            熱門題材
+          </span>
+          {renderButtons(topicGroups)}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -142,7 +163,7 @@ function DailyScorecard({
             </CardTitle>
             <p className="mt-1 text-xs text-muted-foreground">
               {data.prediction_date} 收盤預測 → {data.result_date} 收盤結果
-              {data.selected_group ? ` · ${data.selected_group}` : " · 綜合"}
+              {data.selected_group ? ` · ${groupLabel(data.selected_group)}` : " · 綜合"}
             </p>
           </div>
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -390,7 +411,7 @@ export default function PredictionsPage() {
           <CardTitle>
             未來 3 至 5 個交易日觀察清單
             <span className="ml-2 text-sm font-normal text-muted-foreground">
-              {predictions.data.selected_group || "綜合"}
+              {groupLabel(predictions.data.selected_group) || "綜合"}
             </span>
           </CardTitle>
         </CardHeader>

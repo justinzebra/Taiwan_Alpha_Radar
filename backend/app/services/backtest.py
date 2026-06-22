@@ -19,7 +19,7 @@ from app.alpha.features.technical_features import (
 )
 from app.alpha.indicators import clamp
 from app.domain.simulator import Candle, Fundamentals, InstitutionalFlow
-from app.domain.universe import StockMeta
+from app.domain.universe import StockMeta, all_hot_topics, stocks_for_topic
 from app.models import DailyPrediction, DailyPrice, PredictionOutcome, Stock
 from app.schemas.backtest import (
     BacktestHorizon,
@@ -52,6 +52,13 @@ def _normalize_group(theme: str | None) -> str:
     return (theme or "").strip()
 
 
+def _group_filter(selected_group: str):
+    if selected_group.startswith("topic:"):
+        stock_ids = stocks_for_topic(selected_group.removeprefix("topic:"))
+        return Stock.stock_id.in_(stock_ids or ["__none__"])
+    return Stock.theme == selected_group
+
+
 def _group_options(
     db: Session,
     *,
@@ -76,12 +83,40 @@ def _group_options(
             ),
         )
 
-    rows = db.execute(query).all()
-    total = sum(count for _, count in rows)
-    return [PredictionGroupOption(value="", label="綜合", count=total)] + [
+    theme_rows = db.execute(query).all()
+    total = sum(count for _, count in theme_rows)
+    options = [PredictionGroupOption(value="", label="綜合", count=total)] + [
         PredictionGroupOption(value=theme, label=theme, count=count)
-        for theme, count in rows
+        for theme, count in theme_rows
     ]
+    for topic in all_hot_topics():
+        stock_ids = stocks_for_topic(topic)
+        if not stock_ids:
+            continue
+        topic_query = (
+            select(func.count(DailyPrediction.id))
+            .where(DailyPrediction.methodology == methodology)
+            .where(DailyPrediction.prediction_date == prediction_date)
+            .where(DailyPrediction.stock_id.in_(stock_ids))
+        )
+        if only_evaluated:
+            topic_query = topic_query.join(
+                PredictionOutcome,
+                and_(
+                    PredictionOutcome.prediction_id == DailyPrediction.id,
+                    PredictionOutcome.horizon_days == 1,
+                ),
+            )
+        count = db.execute(topic_query).scalar_one()
+        if count:
+            options.append(
+                PredictionGroupOption(
+                    value=f"topic:{topic}",
+                    label=topic,
+                    count=count,
+                )
+            )
+    return options
 
 
 def _direction(score: float) -> str:
@@ -649,7 +684,7 @@ def get_latest_predictions(
         .order_by(DailyPrediction.rank)
     )
     if selected_group:
-        query = query.where(Stock.theme == selected_group)
+        query = query.where(_group_filter(selected_group))
     rows = db.execute(query.limit(limit)).all()
     return PredictionListResponse(
         as_of=latest.isoformat(),
@@ -701,7 +736,7 @@ def get_daily_prediction_results(
         )
         .where(DailyPrediction.methodology == methodology)
         .where(PredictionOutcome.horizon_days == 1)
-        .where(True if not selected_group else Stock.theme == selected_group)
+        .where(True if not selected_group else _group_filter(selected_group))
         .distinct()
         .order_by(desc(DailyPrediction.prediction_date))
     ).scalars().all()
@@ -754,7 +789,7 @@ def get_daily_prediction_results(
         )
         .where(DailyPrediction.methodology == methodology)
         .where(DailyPrediction.prediction_date == target_date)
-        .where(True if not selected_group else Stock.theme == selected_group)
+        .where(True if not selected_group else _group_filter(selected_group))
         .order_by(DailyPrediction.rank)
         .limit(limit)
     ).all()
@@ -803,7 +838,7 @@ def get_daily_prediction_results(
         )
         .where(DailyPrediction.methodology == methodology)
         .where(DailyPrediction.prediction_date == target_date)
-        .where(True if not selected_group else Stock.theme == selected_group)
+        .where(True if not selected_group else _group_filter(selected_group))
     ).all()
 
     items = []
