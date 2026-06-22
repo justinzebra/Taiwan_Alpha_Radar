@@ -94,9 +94,14 @@ export interface PredictionItem {
   name: string;
   theme: string;
   signal_score: number;
+  adjusted_score: number;
   direction: string;
   confidence: number;
   entry_close: number;
+  market_breadth: number | null;
+  market_regime: string | null;
+  quality_tag: string | null;
+  quality_reason: string | null;
 }
 
 export interface PredictionGroupOption {
@@ -120,9 +125,14 @@ export interface DailyPredictionResultItem {
   name: string;
   theme: string;
   signal_score: number;
+  adjusted_score: number;
   direction: string;
   confidence: number;
   prediction_close: number;
+  market_breadth: number | null;
+  market_regime: string | null;
+  quality_tag: string | null;
+  quality_reason: string | null;
   result_open: number | null;
   result_close: number;
   return_pct: number;

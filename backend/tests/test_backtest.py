@@ -7,7 +7,10 @@ from sqlalchemy.orm import Session
 import app.models  # noqa: F401
 from app.database import Base
 from app.models import DailyPrediction, DailyPrice, PredictionOutcome, Stock
+from app.alpha.features.technical_features import calculate_market_breadth
 from app.services.backtest import (
+    METHODOLOGY_V2_CANDIDATE,
+    _adjusted_score,
     build_predictions,
     evaluate_predictions,
     get_backtest_summary,
@@ -38,6 +41,7 @@ def _seed_prices(db: Session) -> None:
                 continue
             previous = price
             price *= drift
+            volume = 2_000_000 if stock_id == "AAA" and offset % 10 == 0 else 1_000_000
             db.add(
                 DailyPrice(
                     stock_id=stock_id,
@@ -46,7 +50,7 @@ def _seed_prices(db: Session) -> None:
                     high=max(previous, price),
                     low=min(previous, price),
                     close=price,
-                    volume=1_000_000,
+                    volume=volume,
                     change_pct=(price / previous - 1) * 100,
                 )
             )
@@ -102,6 +106,78 @@ def test_rebuilding_predictions_is_idempotent():
         assert db.query(DailyPrediction).count() == first
 
 
+def test_v2_generation_does_not_overwrite_v1_predictions():
+    engine = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_prices(db)
+        build_predictions(db, lookback_days=10)
+        v1_before = db.execute(
+            select(DailyPrediction)
+            .where(DailyPrediction.methodology == "technical_eod_v1")
+            .order_by(DailyPrediction.stock_id, DailyPrediction.prediction_date)
+        ).scalars().all()
+        snapshot = [
+            (item.stock_id, item.prediction_date, item.signal_score, item.rank)
+            for item in v1_before
+        ]
+
+        build_predictions(
+            db,
+            lookback_days=10,
+            methodology=METHODOLOGY_V2_CANDIDATE,
+        )
+
+        v1_after = db.execute(
+            select(DailyPrediction)
+            .where(DailyPrediction.methodology == "technical_eod_v1")
+            .order_by(DailyPrediction.stock_id, DailyPrediction.prediction_date)
+        ).scalars().all()
+        assert [
+            (item.stock_id, item.prediction_date, item.signal_score, item.rank)
+            for item in v1_after
+        ] == snapshot
+        assert db.execute(
+            select(DailyPrediction).where(
+                DailyPrediction.methodology == METHODOLOGY_V2_CANDIDATE
+            )
+        ).scalars().first()
+
+
+def test_market_breadth_calculation():
+    engine = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_prices(db)
+        prices_by_stock = {
+            stock_id: db.execute(
+                select(DailyPrice)
+                .where(DailyPrice.stock_id == stock_id)
+                .order_by(DailyPrice.trade_date)
+            ).scalars().all()
+            for stock_id in ("AAA", "BBB")
+        }
+        target_date = prices_by_stock["AAA"][-1].trade_date
+
+        assert calculate_market_breadth(prices_by_stock, target_date) == 0.5
+
+
+def test_v2_adjusted_score_penalizes_weak_market_breadth():
+    assert _adjusted_score(
+        70,
+        market_breadth=0.4,
+        quality_tag="watch_only",
+    ) == 57
+
+
+def test_v2_high_quality_adds_adjusted_score():
+    assert _adjusted_score(
+        70,
+        market_breadth=0.7,
+        quality_tag="high_quality",
+    ) == 76
+
+
 def test_daily_prediction_results_show_next_session_scorecard():
     engine = create_engine("sqlite:///:memory:", future=True)
     Base.metadata.create_all(engine)
@@ -148,3 +224,36 @@ def test_prediction_lists_can_filter_by_theme_with_local_rank():
         assert result.evaluated_predictions == 1
         assert result.items[0].rank == 1
         assert result.items[0].theme == "DOWN"
+
+
+def test_v2_predictions_and_backtest_can_be_queried():
+    engine = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_prices(db)
+        build_predictions(
+            db,
+            lookback_days=20,
+            methodology=METHODOLOGY_V2_CANDIDATE,
+        )
+        evaluate_predictions(
+            db,
+            horizons=(1, 3, 5, 10),
+            methodology=METHODOLOGY_V2_CANDIDATE,
+        )
+
+        from app.services.backtest import get_latest_predictions
+
+        predictions = get_latest_predictions(
+            db, methodology=METHODOLOGY_V2_CANDIDATE
+        )
+        summary = get_backtest_summary(
+            db, methodology=METHODOLOGY_V2_CANDIDATE
+        )
+
+        assert predictions.methodology == METHODOLOGY_V2_CANDIDATE
+        assert predictions.items
+        assert predictions.items[0].adjusted_score is not None
+        assert predictions.items[0].quality_tag is not None
+        assert summary.methodology == METHODOLOGY_V2_CANDIDATE
+        assert {item.horizon_days for item in summary.horizons} == {1, 3, 5, 10}

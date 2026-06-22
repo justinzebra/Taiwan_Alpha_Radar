@@ -26,10 +26,15 @@ class DailyPrediction(Base):
     methodology: Mapped[str] = mapped_column(String(32), index=True)
     data_source: Mapped[str] = mapped_column(String(32))
     signal_score: Mapped[float] = mapped_column(Float)
+    adjusted_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     direction: Mapped[str] = mapped_column(String(8))
     confidence: Mapped[float] = mapped_column(Float)
     rank: Mapped[int] = mapped_column(Integer, index=True)
     entry_close: Mapped[float] = mapped_column(Float)
+    market_breadth: Mapped[float | None] = mapped_column(Float, nullable=True)
+    market_regime: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    quality_tag: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    quality_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

@@ -94,6 +94,15 @@ def test_api_backtest_endpoint(client):
     assert body["methodology"] == "technical_eod_v1"
     assert {item["horizon_days"] for item in body["horizons"]} == {1, 3, 5, 10}
 
+    v2 = client.get(
+        "/api/backtest",
+        params={"methodology": "technical_eod_v2_candidate"},
+    )
+    assert v2.status_code == 200
+    v2_body = v2.json()
+    assert v2_body["methodology"] == "technical_eod_v2_candidate"
+    assert {item["horizon_days"] for item in v2_body["horizons"]} == {1, 3, 5, 10}
+
 
 def test_api_predictions_returns_latest_ranked_signals(client):
     res = client.get("/api/predictions", params={"limit": 10})
@@ -103,6 +112,17 @@ def test_api_predictions_returns_latest_ranked_signals(client):
     assert len(body["items"]) == 10
     assert [item["rank"] for item in body["items"]] == list(range(1, 11))
     assert all(item["direction"] in {"偏多", "中性", "偏空"} for item in body["items"])
+
+    v2 = client.get(
+        "/api/predictions",
+        params={"limit": 10, "methodology": "technical_eod_v2_candidate"},
+    )
+    assert v2.status_code == 200
+    v2_body = v2.json()
+    assert v2_body["methodology"] == "technical_eod_v2_candidate"
+    assert len(v2_body["items"]) == 10
+    assert all("adjusted_score" in item for item in v2_body["items"])
+    assert all(item["quality_tag"] for item in v2_body["items"])
 
 
 def test_api_prediction_results_returns_daily_scorecard(client):
@@ -115,6 +135,16 @@ def test_api_prediction_results_returns_daily_scorecard(client):
     assert body["result_date"]
     assert len(body["items"]) == 10
     assert all("direction_correct" in item for item in body["items"])
+
+    v2 = client.get(
+        "/api/prediction-results",
+        params={"limit": 10, "methodology": "technical_eod_v2_candidate"},
+    )
+    assert v2.status_code == 200
+    v2_body = v2.json()
+    assert v2_body["methodology"] == "technical_eod_v2_candidate"
+    assert len(v2_body["items"]) == 10
+    assert all("market_breadth" in item for item in v2_body["items"])
 
 
 def test_api_stocks_search_and_sort(client):

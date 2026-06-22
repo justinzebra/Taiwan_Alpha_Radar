@@ -6,7 +6,12 @@ confirmation into a 0-100 score.
 from __future__ import annotations
 
 from app.alpha.base import DimensionResult, DimensionScorer, StockContext
-from app.alpha.indicators import momentum_pct, rsi, sma
+from app.alpha.features.technical_features import (
+    calculate_ma_state,
+    calculate_momentum_20d,
+    calculate_rsi_14,
+    calculate_volume_confirm,
+)
 
 
 class TechnicalDimension(DimensionScorer):
@@ -15,18 +20,18 @@ class TechnicalDimension(DimensionScorer):
     weight = 0.30
 
     def score(self, ctx: StockContext) -> DimensionResult:
-        closes = ctx.closes
         reasons: list[str] = []
         metrics: dict = {}
-        if len(closes) < 25:
+        if len(ctx.candles) < 25:
             return self._result(50.0, ["資料不足，給予中性分數"], {})
 
-        last = closes[-1]
-        ma5 = sma(closes, 5)
-        ma20 = sma(closes, 20)
-        ma60 = sma(closes, 60) or sma(closes, len(closes) - 1)
-        mom20 = momentum_pct(closes, 20) or 0.0
-        rsi14 = rsi(closes, 14) or 50.0
+        ma = calculate_ma_state(ctx.candles)
+        last = ma["close"]
+        ma5 = ma["ma5"]
+        ma20 = ma["ma20"]
+        ma60 = ma["ma60"]
+        mom20 = calculate_momentum_20d(ctx.candles)
+        rsi14 = calculate_rsi_14(ctx.candles)
 
         metrics = {
             "close": round(last, 2),
@@ -35,19 +40,20 @@ class TechnicalDimension(DimensionScorer):
             "ma60": round(ma60, 2) if ma60 else None,
             "momentum_20d_pct": round(mom20, 2),
             "rsi14": round(rsi14, 1),
+            "volume_confirm": calculate_volume_confirm(ctx.candles),
         }
 
         score = 50.0
 
         # Trend structure: bullish stacking of MAs.
         if ma5 and ma20 and ma60:
-            if last > ma5 > ma20 > ma60:
+            if ma["state"] == "bull_stack":
                 score += 18
                 reasons.append("均線多頭排列，趨勢向上")
-            elif last < ma5 < ma20 < ma60:
+            elif ma["state"] == "bear_stack":
                 score -= 18
                 reasons.append("均線空頭排列，趨勢轉弱")
-            elif last > ma20:
+            elif ma["state"] == "above_ma20":
                 score += 6
                 reasons.append("股價站上月線")
             else:
@@ -73,11 +79,8 @@ class TechnicalDimension(DimensionScorer):
             reasons.append("RSI 弱勢，買盤不足")
 
         # Volume confirmation.
-        vols = [c.volume for c in ctx.candles]
-        if len(vols) >= 21:
-            v_avg = sum(vols[-21:-1]) / 20
-            if v_avg and vols[-1] > v_avg * 1.3 and closes[-1] > closes[-2]:
-                score += 6
-                reasons.append("帶量上漲，量價配合")
+        if metrics["volume_confirm"]:
+            score += 6
+            reasons.append("帶量上漲，量價配合")
 
         return self._result(score, reasons, metrics)

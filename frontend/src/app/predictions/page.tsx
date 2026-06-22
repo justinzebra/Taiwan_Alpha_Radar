@@ -17,6 +17,36 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorPanel, LoadingPanel } from "@/components/common/States";
 import type { PredictionGroupOption } from "@/lib/types";
 
+const METHODOLOGIES = [
+  { value: "technical_eod_v1", label: "v1 基準模型" },
+  { value: "technical_eod_v2_candidate", label: "v2 候選模型" },
+] as const;
+
+const QUALITY_LABELS: Record<string, string> = {
+  high_quality: "高品質",
+  market_supported: "市場支持",
+  watch_only: "觀察",
+  neutral: "中性",
+};
+
+const REGIME_LABELS: Record<string, string> = {
+  risk_on: "風險偏多",
+  neutral_positive: "中性偏多",
+  risk_off: "風險偏低",
+};
+
+function fmtBreadth(value: number | null) {
+  return value === null ? "-" : `${(value * 100).toFixed(0)}%`;
+}
+
+function qualityLabel(value: string | null) {
+  return value ? QUALITY_LABELS[value] ?? value : "-";
+}
+
+function regimeLabel(value: string | null) {
+  return value ? REGIME_LABELS[value] ?? value : "-";
+}
+
 function GroupTabs({
   groups,
   selectedGroup,
@@ -52,11 +82,23 @@ function GroupTabs({
   );
 }
 
-function DailyScorecard({ selectedGroup }: { selectedGroup: string }) {
+function DailyScorecard({
+  selectedGroup,
+  methodology,
+}: {
+  selectedGroup: string;
+  methodology: string;
+}) {
   const [selectedDate, setSelectedDate] = useState("");
   const results = useApi(
-    () => api.predictionResults(selectedDate || undefined, 10, selectedGroup),
-    [selectedDate, selectedGroup],
+    () =>
+      api.predictionResults(
+        selectedDate || undefined,
+        10,
+        selectedGroup,
+        methodology,
+      ),
+    [selectedDate, selectedGroup, methodology],
   );
 
   if (results.loading) return <LoadingPanel label="載入每日對答案…" />;
@@ -160,13 +202,17 @@ function DailyScorecard({ selectedGroup }: { selectedGroup: string }) {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] border-collapse text-sm">
+          <table className="w-full min-w-[1320px] border-collapse text-sm">
             <thead>
               <tr className="text-left text-xs text-muted-foreground">
                 <th className="px-3 py-2">#</th>
                 <th className="px-3 py-2">股票</th>
                 <th className="px-3 py-2">族群</th>
                 <th className="px-3 py-2 text-right">訊號</th>
+                <th className="px-3 py-2 text-right">調整後</th>
+                <th className="px-3 py-2 text-right">市場廣度</th>
+                <th className="px-3 py-2 text-right">市場狀態</th>
+                <th className="px-3 py-2 text-right">品質</th>
                 <th className="px-3 py-2 text-right">方向</th>
                 <th className="px-3 py-2 text-right">預測日收盤</th>
                 <th className="px-3 py-2 text-right">結果日開盤</th>
@@ -193,6 +239,20 @@ function DailyScorecard({ selectedGroup }: { selectedGroup: string }) {
                   </td>
                   <td className={cn("px-3 py-3 text-right tnum font-semibold", scoreColor(item.signal_score))}>
                     {item.signal_score.toFixed(1)}
+                  </td>
+                  <td className={cn("px-3 py-3 text-right tnum font-semibold", scoreColor(item.adjusted_score))}>
+                    {item.adjusted_score.toFixed(1)}
+                  </td>
+                  <td className="px-3 py-3 text-right tnum">
+                    {fmtBreadth(item.market_breadth)}
+                  </td>
+                  <td className="px-3 py-3 text-right text-xs text-muted-foreground">
+                    {regimeLabel(item.market_regime)}
+                  </td>
+                  <td className="px-3 py-3 text-right">
+                    <Badge variant={item.quality_tag === "high_quality" ? "bull" : item.quality_tag === "watch_only" ? "outline" : "gold"}>
+                      {qualityLabel(item.quality_tag)}
+                    </Badge>
                   </td>
                   <td className="px-3 py-3 text-right">
                     <Badge variant={item.direction === "偏多" ? "bull" : item.direction === "偏空" ? "bear" : "outline"}>
@@ -232,11 +292,12 @@ function DailyScorecard({ selectedGroup }: { selectedGroup: string }) {
 
 export default function PredictionsPage() {
   const [selectedGroup, setSelectedGroup] = useState("");
+  const [methodology, setMethodology] = useState("technical_eod_v1");
   const predictions = useApi(
-    () => api.predictions(10, selectedGroup),
-    [selectedGroup],
+    () => api.predictions(10, selectedGroup, methodology),
+    [selectedGroup, methodology],
   );
-  const backtest = useApi(() => api.backtest());
+  const backtest = useApi(() => api.backtest(methodology), [methodology]);
 
   if (predictions.loading || backtest.loading) return <LoadingPanel />;
   if (predictions.error || backtest.error || !predictions.data || !backtest.data) {
@@ -252,9 +313,32 @@ export default function PredictionsPage() {
         </div>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">每日預測與回測驗證</h1>
         <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-          technical_eod_v1 僅使用當日及過去的官方收盤 OHLCV，
-          評估未來 1、3、5、10 個交易日，不使用未來資料。
+          收盤後建立未來 3 至 5 個交易日觀察清單；模型僅使用當日及過去的官方收盤 OHLCV，
+          並評估未來 1、3、5、10 個交易日，不使用未來資料。
         </p>
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-card/50 p-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="text-sm font-medium">模型版本</div>
+          <div className="text-xs text-muted-foreground">
+            v1 保留為 baseline；v2 候選加入市場廣度與品質標籤並行觀察。
+          </div>
+        </div>
+        <select
+          value={methodology}
+          onChange={(event) => {
+            setMethodology(event.target.value);
+            setSelectedGroup("");
+          }}
+          className="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
+        >
+          {METHODOLOGIES.map((item) => (
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       <Card className="border-gold/30 bg-gold/5">
@@ -276,7 +360,7 @@ export default function PredictionsPage() {
       <Card>
         <CardHeader>
           <CardTitle>
-            下一交易日觀察名單
+            未來 3 至 5 個交易日觀察清單
             <span className="ml-2 text-sm font-normal text-muted-foreground">
               {predictions.data.selected_group || "綜合"}
             </span>
@@ -284,7 +368,7 @@ export default function PredictionsPage() {
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
+            <table className="w-full min-w-[1120px] border-collapse text-sm">
               <thead>
                 <tr className="text-left text-xs text-muted-foreground">
                   <th className="px-3 py-2">#</th>
@@ -292,6 +376,10 @@ export default function PredictionsPage() {
                   <th className="px-3 py-2">族群</th>
                   <th className="px-3 py-2 text-right">收盤</th>
                   <th className="px-3 py-2 text-right">技術訊號</th>
+                  <th className="px-3 py-2 text-right">調整後分數</th>
+                  <th className="px-3 py-2 text-right">市場廣度</th>
+                  <th className="px-3 py-2 text-right">市場狀態</th>
+                  <th className="px-3 py-2 text-right">品質標籤</th>
                   <th className="px-3 py-2 text-right">方向</th>
                   <th className="px-3 py-2 text-right">信心度</th>
                 </tr>
@@ -313,6 +401,23 @@ export default function PredictionsPage() {
                     <td className={cn("px-3 py-3 text-right tnum font-semibold", scoreColor(item.signal_score))}>
                       {item.signal_score.toFixed(1)}
                     </td>
+                    <td className={cn("px-3 py-3 text-right tnum font-semibold", scoreColor(item.adjusted_score))}>
+                      {item.adjusted_score.toFixed(1)}
+                    </td>
+                    <td className="px-3 py-3 text-right tnum">
+                      {fmtBreadth(item.market_breadth)}
+                    </td>
+                    <td className="px-3 py-3 text-right text-xs text-muted-foreground">
+                      {regimeLabel(item.market_regime)}
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <Badge
+                        title={item.quality_reason ?? undefined}
+                        variant={item.quality_tag === "high_quality" ? "bull" : item.quality_tag === "watch_only" ? "outline" : "gold"}
+                      >
+                        {qualityLabel(item.quality_tag)}
+                      </Badge>
+                    </td>
                     <td className="px-3 py-3 text-right">
                       <Badge variant={item.direction === "偏多" ? "bull" : item.direction === "偏空" ? "bear" : "outline"}>
                         {item.direction}
@@ -327,7 +432,11 @@ export default function PredictionsPage() {
         </CardContent>
       </Card>
 
-      <DailyScorecard key={selectedGroup || "all"} selectedGroup={selectedGroup} />
+      <DailyScorecard
+        key={`${methodology}-${selectedGroup || "all"}`}
+        selectedGroup={selectedGroup}
+        methodology={methodology}
+      />
 
       <Card>
         <CardHeader>

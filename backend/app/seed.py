@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 from datetime import date
 
+from sqlalchemy import inspect, text
+
 from app.config import settings
 from app.database import Base, SessionLocal, engine
 from app.models import DataSourceState, StockScore  # noqa: F401 - ensure models are registered
@@ -21,7 +23,31 @@ logger = logging.getLogger(__name__)
 def init_db() -> None:
     """Create all tables."""
     Base.metadata.create_all(bind=engine)
+    _ensure_prediction_columns()
     logger.info("Database tables ensured.")
+
+
+def _ensure_prediction_columns() -> None:
+    """Add nullable v2 columns when an existing DB predates this schema."""
+    inspector = inspect(engine)
+    if "daily_predictions" not in inspector.get_table_names():
+        return
+    existing = {
+        column["name"] for column in inspector.get_columns("daily_predictions")
+    }
+    columns = {
+        "adjusted_score": "FLOAT",
+        "market_breadth": "FLOAT",
+        "market_regime": "VARCHAR(32)",
+        "quality_tag": "VARCHAR(32)",
+        "quality_reason": "VARCHAR(255)",
+    }
+    missing = [(name, ddl) for name, ddl in columns.items() if name not in existing]
+    if not missing:
+        return
+    with engine.begin() as conn:
+        for name, ddl in missing:
+            conn.execute(text(f"ALTER TABLE daily_predictions ADD COLUMN {name} {ddl}"))
 
 
 def seed_if_empty() -> None:

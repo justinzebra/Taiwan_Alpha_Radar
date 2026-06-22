@@ -41,7 +41,7 @@ from app.models import (
     PredictionOutcome,
 )
 from app.domain.universe import UNIVERSE
-from app.services.backtest import build_predictions, evaluate_predictions
+from app.services.backtest import build_all_predictions, evaluate_all_predictions
 
 logger = logging.getLogger(__name__)
 
@@ -260,12 +260,12 @@ def run_daily_pipeline(db: Session, as_of: date) -> dict:
         other_sources=collectors.other_sources,
     )
     _persist_ai_reports(db, scores, analysis_date)
-    predictions = build_predictions(
+    predictions = build_all_predictions(
         db,
         lookback_days=settings.prediction_lookback_days,
         data_source=collectors.price_source,
     )
-    outcomes = evaluate_predictions(db)
+    outcomes = evaluate_all_predictions(db)
     last_run = db.get(DataSourceState, "pipeline_last_requested_date")
     if last_run is None:
         db.add(

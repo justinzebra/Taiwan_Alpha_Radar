@@ -26,9 +26,14 @@ class PredictionItem(BaseModel):
     name: str
     theme: str
     signal_score: float
+    adjusted_score: float
     direction: str
     confidence: float
     entry_close: float
+    market_breadth: float | None = None
+    market_regime: str | None = None
+    quality_tag: str | None = None
+    quality_reason: str | None = None
 
 
 class PredictionGroupOption(BaseModel):
@@ -52,9 +57,14 @@ class DailyPredictionResultItem(BaseModel):
     name: str
     theme: str
     signal_score: float
+    adjusted_score: float
     direction: str
     confidence: float
     prediction_close: float
+    market_breadth: float | None = None
+    market_regime: str | None = None
+    quality_tag: str | None = None
+    quality_reason: str | None = None
     result_open: float | None
     result_close: float
     return_pct: float

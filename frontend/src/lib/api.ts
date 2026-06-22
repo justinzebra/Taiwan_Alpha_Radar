@@ -60,20 +60,31 @@ export const api = {
     return getJSON<StockListResponse>(`/stocks?${q.toString()}`);
   },
   stock: (id: string) => getJSON<StockDetailResponse>(`/stocks/${id}`),
-  predictions: (limit = 10, theme?: string) => {
+  predictions: (limit = 10, theme?: string, methodology?: string) => {
     const q = new URLSearchParams({ limit: String(limit) });
     if (theme) q.set("theme", theme);
+    if (methodology) q.set("methodology", methodology);
     return getJSON<PredictionListResponse>(`/predictions?${q.toString()}`);
   },
-  predictionResults: (date?: string, limit = 10, theme?: string) => {
+  predictionResults: (
+    date?: string,
+    limit = 10,
+    theme?: string,
+    methodology?: string,
+  ) => {
     const q = new URLSearchParams({ limit: String(limit) });
     if (date) q.set("date", date);
     if (theme) q.set("theme", theme);
+    if (methodology) q.set("methodology", methodology);
     return getJSON<DailyPredictionResultResponse>(
       `/prediction-results?${q.toString()}`,
     );
   },
-  backtest: () => getJSON<BacktestSummary>("/backtest"),
+  backtest: (methodology?: string) => {
+    const q = new URLSearchParams();
+    if (methodology) q.set("methodology", methodology);
+    return getJSON<BacktestSummary>(`/backtest?${q.toString()}`);
+  },
   runPipeline: () =>
     getJSON<RunPipelineResponse>("/admin/run-pipeline", { method: "POST" }),
 };
