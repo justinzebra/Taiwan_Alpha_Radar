@@ -35,6 +35,9 @@ class DailyPrediction(Base):
     market_regime: Mapped[str | None] = mapped_column(String(32), nullable=True)
     quality_tag: Mapped[str | None] = mapped_column(String(32), nullable=True)
     quality_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_preview: Mapped[bool] = mapped_column(Boolean, default=False)
+    price_status: Mapped[str] = mapped_column(String(32), default="final_close")
+    price_timestamp: Mapped[datetime | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

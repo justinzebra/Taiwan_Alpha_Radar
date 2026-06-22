@@ -19,6 +19,16 @@ type RunPipelineResponse = {
     predictions: number;
     evaluated_outcomes: number;
   };
+  preview?: {
+    status: string;
+    as_of: string;
+    price_status: string;
+    price_timestamp: string;
+    price_source: string;
+    quote_count: number;
+    predictions: number;
+    message: string;
+  };
 };
 
 // Browser-side base URL (the fetch runs in the user's browser, so it must point

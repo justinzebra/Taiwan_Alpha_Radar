@@ -102,6 +102,9 @@ export interface PredictionItem {
   market_regime: string | null;
   quality_tag: string | null;
   quality_reason: string | null;
+  is_preview: boolean;
+  price_status: string;
+  price_timestamp: string | null;
 }
 
 export interface PredictionGroupOption {
@@ -114,6 +117,9 @@ export interface PredictionListResponse {
   as_of: string;
   methodology: string;
   data_source: string;
+  is_preview: boolean;
+  price_status: string;
+  price_timestamp: string | null;
   selected_group: string;
   available_groups: PredictionGroupOption[];
   items: PredictionItem[];
@@ -133,6 +139,9 @@ export interface DailyPredictionResultItem {
   market_regime: string | null;
   quality_tag: string | null;
   quality_reason: string | null;
+  is_preview: boolean;
+  price_status: string;
+  price_timestamp: string | null;
   result_open: number | null;
   result_close: number;
   return_pct: number;
@@ -144,6 +153,9 @@ export interface DailyPredictionResultItem {
 export interface DailyPredictionResultResponse {
   methodology: string;
   data_source: string;
+  is_preview: boolean;
+  price_status: string;
+  price_timestamp: string | null;
   selected_group: string;
   available_groups: PredictionGroupOption[];
   available_dates: string[];

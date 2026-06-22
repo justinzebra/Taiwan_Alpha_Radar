@@ -190,6 +190,7 @@ pytest                      # 核心引擎測試（indicators / alpha / ai）
 策略使用方式與計分細節請見 [`docs/RECOMMENDATION_STRATEGY.md`](docs/RECOMMENDATION_STRATEGY.md)。
 預測公式與外部審核重現步驟請見 [`docs/PREDICTION_METHODOLOGY_AUDIT.md`](docs/PREDICTION_METHODOLOGY_AUDIT.md)。
 v2 候選模型說明請見 [`docs/TECHNICAL_EOD_V2_CANDIDATE.md`](docs/TECHNICAL_EOD_V2_CANDIDATE.md)。
+盤中未收盤暫估說明請見 [`docs/INTRADAY_PREVIEW.md`](docs/INTRADAY_PREVIEW.md)。
 系統架構與設計決策請見 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
 ---

@@ -19,7 +19,12 @@ from app.services.backtest import (
 )
 
 router = APIRouter()
-MethodologyParam = Literal["technical_eod_v1", "technical_eod_v2_candidate"]
+MethodologyParam = Literal[
+    "technical_eod_v1",
+    "technical_eod_v2_candidate",
+    "technical_intraday_preview_v1",
+    "technical_intraday_preview_v2_candidate",
+]
 
 
 @router.get("/backtest", response_model=BacktestSummary)

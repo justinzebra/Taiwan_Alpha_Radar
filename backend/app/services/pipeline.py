@@ -15,7 +15,8 @@ idempotent.
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -28,6 +29,9 @@ from app.alpha import (
 )
 from app.alpha.stock_score import StockScoreResult
 from app.collectors import get_collectors
+from app.collectors.market.intraday_snapshot_collector import (
+    TwseMisIntradaySnapshotCollector,
+)
 from app.config import settings
 from app.models import (
     AIReport,
@@ -41,7 +45,11 @@ from app.models import (
     PredictionOutcome,
 )
 from app.domain.universe import UNIVERSE
-from app.services.backtest import build_all_predictions, evaluate_all_predictions
+from app.services.backtest import (
+    build_all_predictions,
+    build_intraday_preview_predictions,
+    evaluate_all_predictions,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -286,4 +294,69 @@ def run_daily_pipeline(db: Session, as_of: date) -> dict:
         "evaluated_outcomes": outcomes,
     }
     logger.info("Pipeline complete: %s", summary)
+    return summary
+
+
+def run_intraday_preview_pipeline(
+    db: Session,
+    as_of: date,
+    *,
+    quote_collector: TwseMisIntradaySnapshotCollector | None = None,
+) -> dict:
+    """Generate pre-close preview predictions from best-effort quote snapshots."""
+    logger.info("Running intraday preview pipeline for %s", as_of)
+    sync_universe(db)
+    quote_collector = quote_collector or TwseMisIntradaySnapshotCollector()
+    now = datetime.now(ZoneInfo("Asia/Taipei")).replace(tzinfo=None)
+
+    preview_candles = {}
+    errors: list[str] = []
+    for meta in UNIVERSE:
+        try:
+            snapshot = quote_collector.fetch_snapshot(meta, now)
+        except Exception as exc:  # pragma: no cover - network failure path
+            errors.append(f"{meta.stock_id}: {exc}")
+            continue
+        if snapshot is None:
+            continue
+        if snapshot.candle.trade_date != as_of:
+            continue
+        preview_candles[meta.stock_id] = snapshot.candle
+
+    if not preview_candles:
+        summary = {
+            "status": "unavailable",
+            "as_of": as_of.isoformat(),
+            "price_status": "intraday_preview_unavailable",
+            "price_timestamp": now.isoformat(),
+            "price_source": quote_collector.source,
+            "quote_count": 0,
+            "predictions": 0,
+            "message": "盤中行情暫時無法取得，未建立未收盤暫估。",
+        }
+        if errors:
+            summary["errors"] = errors[:5]
+        logger.info("Intraday preview unavailable: %s", summary)
+        return summary
+
+    predictions = build_intraday_preview_predictions(
+        db,
+        preview_candles_by_stock=preview_candles,
+        price_timestamp=now,
+        data_source=quote_collector.source,
+        lookback_days=settings.prediction_lookback_days,
+    )
+    summary = {
+        "status": "ok",
+        "as_of": as_of.isoformat(),
+        "price_status": "intraday_preview",
+        "price_timestamp": now.isoformat(),
+        "price_source": quote_collector.source,
+        "quote_count": len(preview_candles),
+        "predictions": predictions,
+        "message": "已建立未收盤暫估預測。",
+    }
+    if errors:
+        summary["errors"] = errors[:5]
+    logger.info("Intraday preview complete: %s", summary)
     return summary

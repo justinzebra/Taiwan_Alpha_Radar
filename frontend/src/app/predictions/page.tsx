@@ -20,6 +20,11 @@ import type { PredictionGroupOption } from "@/lib/types";
 const METHODOLOGIES = [
   { value: "technical_eod_v1", label: "v1 基準模型" },
   { value: "technical_eod_v2_candidate", label: "v2 候選模型" },
+  { value: "technical_intraday_preview_v1", label: "盤中暫估 v1" },
+  {
+    value: "technical_intraday_preview_v2_candidate",
+    label: "盤中暫估 v2",
+  },
 ] as const;
 
 const QUALITY_LABELS: Record<string, string> = {
@@ -45,6 +50,11 @@ function qualityLabel(value: string | null) {
 
 function regimeLabel(value: string | null) {
   return value ? REGIME_LABELS[value] ?? value : "-";
+}
+
+function formatTimestamp(value: string | null) {
+  if (!value) return "-";
+  return value.replace("T", " ").slice(0, 19);
 }
 
 function GroupTabs({
@@ -114,7 +124,9 @@ function DailyScorecard({
           <CardTitle>每日對答案</CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
-          尚無已完成隔日驗證的預測。
+          {results.data?.is_preview
+            ? "未收盤暫估不納入正式隔日驗證；請切回 v1 / v2 收盤模型查看對答案。"
+            : "尚無已完成隔日驗證的預測。"}
         </CardContent>
       </Card>
     );
@@ -309,12 +321,13 @@ export default function PredictionsPage() {
       <div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <FlaskConical className="h-3.5 w-3.5" />
-          收盤後產生 · 預測基準日 {predictions.data.as_of}
+          {predictions.data.is_preview ? "未收盤暫估" : "收盤後產生"} ·
+          預測基準日 {predictions.data.as_of || "-"}
         </div>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">每日預測與回測驗證</h1>
         <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-          收盤後建立未來 3 至 5 個交易日觀察清單；模型僅使用當日及過去的官方收盤 OHLCV，
-          並評估未來 1、3、5、10 個交易日，不使用未來資料。
+          收盤後模型建立未來 3 至 5 個交易日觀察清單；盤中暫估會用目前可得價格組成未收盤
+          OHLCV，僅供收盤前觀察，正式訊號仍以收盤資料為準。
         </p>
       </div>
 
@@ -323,6 +336,7 @@ export default function PredictionsPage() {
           <div className="text-sm font-medium">模型版本</div>
           <div className="text-xs text-muted-foreground">
             v1 保留為 baseline；v2 候選加入市場廣度與品質標籤並行觀察。
+            盤中暫估不納入正式回測。
           </div>
         </div>
         <select
@@ -345,9 +359,23 @@ export default function PredictionsPage() {
         <CardContent className="flex items-start gap-3 pt-5">
           <Database className="mt-0.5 h-4 w-4 text-gold" />
           <p className="text-xs leading-relaxed text-muted-foreground">
-            此頁的預測與回測使用官方價格資料。主儀表板的籌碼、基本面與題材資料目前仍是
-            mock，因此兩者必須分開解讀；回測結果不代表未來績效。
+            {predictions.data.is_preview ? (
+              <>
+                目前顯示的是未收盤暫估，資料時間{" "}
+                {formatTimestamp(predictions.data.price_timestamp)}；收盤前價格、成交量與排名都可能改變。
+              </>
+            ) : (
+              <>
+                此頁的預測與回測使用官方價格資料。主儀表板的籌碼、基本面與題材資料目前仍是
+                mock，因此兩者必須分開解讀；回測結果不代表未來績效。
+              </>
+            )}
           </p>
+          {predictions.data.is_preview ? (
+            <Badge variant="gold" className="mt-2">
+              未收盤暫估
+            </Badge>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -374,7 +402,9 @@ export default function PredictionsPage() {
                   <th className="px-3 py-2">#</th>
                   <th className="px-3 py-2">股票</th>
                   <th className="px-3 py-2">族群</th>
-                  <th className="px-3 py-2 text-right">收盤</th>
+                  <th className="px-3 py-2 text-right">
+                    {predictions.data.is_preview ? "目前價" : "收盤"}
+                  </th>
                   <th className="px-3 py-2 text-right">技術訊號</th>
                   <th className="px-3 py-2 text-right">調整後分數</th>
                   <th className="px-3 py-2 text-right">市場廣度</th>
@@ -446,8 +476,9 @@ export default function PredictionsPage() {
         </CardHeader>
         <CardContent>
           <div className="mb-4 text-xs text-muted-foreground">
-            期間 {backtest.data.prediction_start || "-"} 至 {backtest.data.prediction_end || "-"}；
-            基準為股票池等權報酬。
+            {predictions.data.is_preview
+              ? "未收盤暫估不納入正式 walk-forward 回測；請切回 v1 / v2 收盤模型比較績效。"
+              : `期間 ${backtest.data.prediction_start || "-"} 至 ${backtest.data.prediction_end || "-"}；基準為股票池等權報酬。`}
           </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {backtest.data.horizons.map((item) => (

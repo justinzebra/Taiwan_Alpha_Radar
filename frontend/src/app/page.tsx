@@ -27,7 +27,13 @@ export default function DashboardPage() {
     try {
       const result = await api.runPipeline();
       const asOf = result.summary?.as_of ? `，最新交易日 ${result.summary.as_of}` : "";
-      setRefreshMessage(`刷新完成${asOf}`);
+      const preview =
+        result.preview?.status === "ok"
+          ? `；${result.preview.message}（${result.preview.quote_count} 檔）`
+          : result.preview?.message
+            ? `；${result.preview.message}`
+            : "";
+      setRefreshMessage(`刷新完成${asOf}${preview}`);
       reload();
     } catch (err) {
       setRefreshMessage(

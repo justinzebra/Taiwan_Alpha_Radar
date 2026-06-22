@@ -4,7 +4,7 @@ Runs the full daily pipeline against a real (SQLite) database, then verifies the
 read-side query service and the FastAPI endpoints return coherent data. This
 exercises: collectors -> alpha engine -> persistence -> queries -> API.
 """
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,12 +13,41 @@ from sqlalchemy.orm import sessionmaker
 
 import app.models  # noqa: F401 - register tables on Base.metadata
 from app.database import Base, get_db
+from app.domain.simulator import Candle
 from app.main import app
 from app.models import DailyPrice, Stock
 from app.services import queries
-from app.services.pipeline import run_daily_pipeline, sync_universe
+from app.services.pipeline import (
+    run_daily_pipeline,
+    run_intraday_preview_pipeline,
+    sync_universe,
+)
 
 AS_OF = date(2026, 6, 10)
+
+
+class FakeIntradayCollector:
+    source = "test_intraday_preview"
+
+    def fetch_snapshot(self, meta, at):
+        return type(
+            "Snapshot",
+            (),
+            {
+                "stock_id": meta.stock_id,
+                "timestamp": datetime(2026, 6, 11, 10, 30),
+                "source": self.source,
+                "candle": Candle(
+                    trade_date=date(2026, 6, 11),
+                    open=meta.base_price,
+                    high=round(meta.base_price * 1.02, 2),
+                    low=round(meta.base_price * 0.99, 2),
+                    close=round(meta.base_price * 1.01, 2),
+                    volume=1_000_000,
+                    change_pct=1.0,
+                ),
+            },
+        )()
 
 
 @pytest.fixture(scope="module")
@@ -190,6 +219,40 @@ def test_pipeline_keeps_price_history_across_analysis_dates(db_session):
         assert after > before
     finally:
         db.close()
+
+
+def test_intraday_preview_predictions_are_marked_and_not_backtested(db_session, client):
+    db = db_session()
+    try:
+        summary = run_intraday_preview_pipeline(
+            db,
+            date(2026, 6, 11),
+            quote_collector=FakeIntradayCollector(),
+        )
+        assert summary["status"] == "ok"
+        assert summary["quote_count"] >= 30
+        assert summary["predictions"] > 0
+    finally:
+        db.close()
+
+    res = client.get(
+        "/api/predictions",
+        params={"methodology": "technical_intraday_preview_v2_candidate"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["is_preview"] is True
+    assert body["price_status"] == "intraday_preview"
+    assert body["price_timestamp"]
+    assert len(body["items"]) == 10
+    assert all(item["is_preview"] for item in body["items"])
+
+    backtest = client.get(
+        "/api/backtest",
+        params={"methodology": "technical_intraday_preview_v2_candidate"},
+    )
+    assert backtest.status_code == 200
+    assert backtest.json()["horizons"] == []
 
 
 def test_sync_universe_updates_existing_market_metadata(db_session):

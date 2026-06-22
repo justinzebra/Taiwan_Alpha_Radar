@@ -34,6 +34,9 @@ class PredictionItem(BaseModel):
     market_regime: str | None = None
     quality_tag: str | None = None
     quality_reason: str | None = None
+    is_preview: bool = False
+    price_status: str = "final_close"
+    price_timestamp: str | None = None
 
 
 class PredictionGroupOption(BaseModel):
@@ -46,6 +49,9 @@ class PredictionListResponse(BaseModel):
     as_of: str
     methodology: str
     data_source: str
+    is_preview: bool = False
+    price_status: str = "final_close"
+    price_timestamp: str | None = None
     selected_group: str
     available_groups: list[PredictionGroupOption]
     items: list[PredictionItem]
@@ -65,6 +71,9 @@ class DailyPredictionResultItem(BaseModel):
     market_regime: str | None = None
     quality_tag: str | None = None
     quality_reason: str | None = None
+    is_preview: bool = False
+    price_status: str = "final_close"
+    price_timestamp: str | None = None
     result_open: float | None
     result_close: float
     return_pct: float
@@ -76,6 +85,9 @@ class DailyPredictionResultItem(BaseModel):
 class DailyPredictionResultResponse(BaseModel):
     methodology: str
     data_source: str
+    is_preview: bool = False
+    price_status: str = "final_close"
+    price_timestamp: str | None = None
     selected_group: str
     available_groups: list[PredictionGroupOption]
     available_dates: list[str]

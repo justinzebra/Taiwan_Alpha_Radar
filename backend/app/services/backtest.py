@@ -4,7 +4,8 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 
-from datetime import date
+from datetime import date, datetime
+from typing import Any
 
 from sqlalchemy import and_, delete, desc, func, select
 from sqlalchemy.orm import Session
@@ -32,8 +33,15 @@ from app.schemas.backtest import (
 
 METHODOLOGY_V1 = "technical_eod_v1"
 METHODOLOGY_V2_CANDIDATE = "technical_eod_v2_candidate"
+METHODOLOGY_INTRADAY_PREVIEW_V1 = "technical_intraday_preview_v1"
+METHODOLOGY_INTRADAY_PREVIEW_V2_CANDIDATE = "technical_intraday_preview_v2_candidate"
 METHODOLOGY = METHODOLOGY_V1
-SUPPORTED_METHODOLOGIES = {METHODOLOGY_V1, METHODOLOGY_V2_CANDIDATE}
+SUPPORTED_METHODOLOGIES = {
+    METHODOLOGY_V1,
+    METHODOLOGY_V2_CANDIDATE,
+    METHODOLOGY_INTRADAY_PREVIEW_V1,
+    METHODOLOGY_INTRADAY_PREVIEW_V2_CANDIDATE,
+}
 DATA_SOURCE = "twse_tpex_official"
 
 _EMPTY_FLOW = InstitutionalFlow(0, 0, 0, 0, 0)
@@ -88,6 +96,20 @@ def _normalize_methodology(methodology: str) -> str:
     if methodology not in SUPPORTED_METHODOLOGIES:
         raise ValueError(f"Unsupported methodology: {methodology}")
     return methodology
+
+
+def _is_v2_methodology(methodology: str) -> bool:
+    return methodology in {
+        METHODOLOGY_V2_CANDIDATE,
+        METHODOLOGY_INTRADAY_PREVIEW_V2_CANDIDATE,
+    }
+
+
+def _is_preview_methodology(methodology: str) -> bool:
+    return methodology in {
+        METHODOLOGY_INTRADAY_PREVIEW_V1,
+        METHODOLOGY_INTRADAY_PREVIEW_V2_CANDIDATE,
+    }
 
 
 def _market_regime(market_breadth: float) -> str:
@@ -190,6 +212,27 @@ def _prediction_item(
         market_regime=prediction.market_regime,
         quality_tag=prediction.quality_tag,
         quality_reason=prediction.quality_reason,
+        is_preview=bool(prediction.is_preview),
+        price_status=prediction.price_status or "final_close",
+        price_timestamp=(
+            prediction.price_timestamp.isoformat()
+            if prediction.price_timestamp is not None
+            else None
+        ),
+    )
+
+
+def _to_candle(price: Any) -> Candle:
+    if isinstance(price, Candle):
+        return price
+    return Candle(
+        price.trade_date,
+        price.open,
+        price.high,
+        price.low,
+        price.close,
+        price.volume,
+        price.change_pct,
     )
 
 
@@ -199,6 +242,10 @@ def build_predictions(
     lookback_days: int = 120,
     data_source: str = DATA_SOURCE,
     methodology: str = METHODOLOGY_V1,
+    prices_by_stock_override: dict[str, list[Any]] | None = None,
+    is_preview: bool = False,
+    price_status: str = "final_close",
+    price_timestamp: datetime | None = None,
 ) -> int:
     """Generate recent predictions using only information available that day."""
     methodology = _normalize_methodology(methodology)
@@ -207,15 +254,18 @@ def build_predictions(
     generated: list[DailyPrediction] = []
     prices_by_stock: dict[str, list[DailyPrice]] = {}
 
-    for stock in stocks:
-        prices_by_stock[stock.stock_id] = db.execute(
-            select(DailyPrice)
-            .where(DailyPrice.stock_id == stock.stock_id)
-            .order_by(DailyPrice.trade_date)
-        ).scalars().all()
+    if prices_by_stock_override is None:
+        for stock in stocks:
+            prices_by_stock[stock.stock_id] = db.execute(
+                select(DailyPrice)
+                .where(DailyPrice.stock_id == stock.stock_id)
+                .order_by(DailyPrice.trade_date)
+            ).scalars().all()
+    else:
+        prices_by_stock = prices_by_stock_override
 
     market_breadth_by_date: dict[date, float] = {}
-    if methodology == METHODOLOGY_V2_CANDIDATE:
+    if _is_v2_methodology(methodology):
         dates = {
             price.trade_date
             for prices in prices_by_stock.values()
@@ -245,12 +295,7 @@ def build_predictions(
             if prices[index].close <= 0:
                 continue
             window = prices[: index + 1]
-            candles = [
-                Candle(
-                    p.trade_date, p.open, p.high, p.low, p.close, p.volume, p.change_pct
-                )
-                for p in window
-            ]
+            candles = [_to_candle(p) for p in window]
             context = StockContext(
                 meta=meta,
                 as_of=prices[index].trade_date,
@@ -265,7 +310,7 @@ def build_predictions(
             market_regime = None
             quality_tag = None
             quality_reason = None
-            if methodology == METHODOLOGY_V2_CANDIDATE:
+            if _is_v2_methodology(methodology):
                 market_breadth = market_breadth_by_date.get(prices[index].trade_date, 0.0)
                 rsi_14 = calculate_rsi_14(window)
                 volume_confirm = calculate_volume_confirm(window)
@@ -304,6 +349,9 @@ def build_predictions(
                     market_regime=market_regime,
                     quality_tag=quality_tag,
                     quality_reason=quality_reason,
+                    is_preview=is_preview,
+                    price_status=price_status,
+                    price_timestamp=price_timestamp,
                 )
             )
 
@@ -333,7 +381,7 @@ def build_predictions(
     for predictions in by_date.values():
         rank_key = (
             (lambda item: item.adjusted_score or item.signal_score)
-            if methodology == METHODOLOGY_V2_CANDIDATE
+            if _is_v2_methodology(methodology)
             else (lambda item: item.signal_score)
         )
         predictions.sort(key=rank_key, reverse=True)
@@ -342,6 +390,52 @@ def build_predictions(
             db.add(prediction)
     db.commit()
     return len(generated)
+
+
+def build_intraday_preview_predictions(
+    db: Session,
+    *,
+    preview_candles_by_stock: dict[str, Candle],
+    price_timestamp: datetime,
+    data_source: str,
+    lookback_days: int = 120,
+) -> int:
+    """Generate pre-close preview predictions without writing preview prices."""
+    if not preview_candles_by_stock:
+        return 0
+
+    stocks = db.execute(select(Stock)).scalars().all()
+    prices_by_stock: dict[str, list[Any]] = {}
+    for stock in stocks:
+        history = db.execute(
+            select(DailyPrice)
+            .where(DailyPrice.stock_id == stock.stock_id)
+            .order_by(DailyPrice.trade_date)
+        ).scalars().all()
+        preview = preview_candles_by_stock.get(stock.stock_id)
+        if preview is None or not history:
+            prices_by_stock[stock.stock_id] = []
+            continue
+        usable = [price for price in history if price.trade_date < preview.trade_date]
+        usable.append(preview)
+        prices_by_stock[stock.stock_id] = usable
+
+    total = 0
+    for methodology in (
+        METHODOLOGY_INTRADAY_PREVIEW_V1,
+        METHODOLOGY_INTRADAY_PREVIEW_V2_CANDIDATE,
+    ):
+        total += build_predictions(
+            db,
+            lookback_days=lookback_days,
+            data_source=data_source,
+            methodology=methodology,
+            prices_by_stock_override=prices_by_stock,
+            is_preview=True,
+            price_status="intraday_preview",
+            price_timestamp=price_timestamp,
+        )
+    return total
 
 
 def build_all_predictions(
@@ -536,6 +630,13 @@ def get_latest_predictions(
             as_of="",
             methodology=methodology,
             data_source=DATA_SOURCE,
+            is_preview=_is_preview_methodology(methodology),
+            price_status=(
+                "intraday_preview"
+                if _is_preview_methodology(methodology)
+                else "final_close"
+            ),
+            price_timestamp=None,
             selected_group=selected_group,
             available_groups=[],
             items=[],
@@ -554,6 +655,21 @@ def get_latest_predictions(
         as_of=latest.isoformat(),
         methodology=methodology,
         data_source=rows[0][0].data_source if rows else DATA_SOURCE,
+        is_preview=bool(rows[0][0].is_preview) if rows else _is_preview_methodology(methodology),
+        price_status=(
+            rows[0][0].price_status or "final_close"
+            if rows
+            else (
+                "intraday_preview"
+                if _is_preview_methodology(methodology)
+                else "final_close"
+            )
+        ),
+        price_timestamp=(
+            rows[0][0].price_timestamp.isoformat()
+            if rows and rows[0][0].price_timestamp is not None
+            else None
+        ),
         selected_group=selected_group,
         available_groups=_group_options(
             db, prediction_date=latest, methodology=methodology
@@ -596,6 +712,13 @@ def get_daily_prediction_results(
         return DailyPredictionResultResponse(
             methodology=methodology,
             data_source=DATA_SOURCE,
+            is_preview=_is_preview_methodology(methodology),
+            price_status=(
+                "intraday_preview"
+                if _is_preview_methodology(methodology)
+                else "final_close"
+            ),
+            price_timestamp=None,
             selected_group=selected_group,
             available_groups=[],
             available_dates=[],
@@ -640,6 +763,13 @@ def get_daily_prediction_results(
         return DailyPredictionResultResponse(
             methodology=methodology,
             data_source=DATA_SOURCE,
+            is_preview=_is_preview_methodology(methodology),
+            price_status=(
+                "intraday_preview"
+                if _is_preview_methodology(methodology)
+                else "final_close"
+            ),
+            price_timestamp=None,
             selected_group=selected_group,
             available_groups=_group_options(
                 db,
@@ -702,6 +832,13 @@ def get_daily_prediction_results(
                 market_regime=prediction.market_regime,
                 quality_tag=prediction.quality_tag,
                 quality_reason=prediction.quality_reason,
+                is_preview=bool(prediction.is_preview),
+                price_status=prediction.price_status or "final_close",
+                price_timestamp=(
+                    prediction.price_timestamp.isoformat()
+                    if prediction.price_timestamp is not None
+                    else None
+                ),
                 result_open=result_price.open if result_price is not None else None,
                 result_close=outcome.exit_close,
                 return_pct=round(outcome.return_pct, 2),
@@ -719,6 +856,13 @@ def get_daily_prediction_results(
     return DailyPredictionResultResponse(
         methodology=methodology,
         data_source=rows[0][0].data_source,
+        is_preview=bool(rows[0][0].is_preview),
+        price_status=rows[0][0].price_status or "final_close",
+        price_timestamp=(
+            rows[0][0].price_timestamp.isoformat()
+            if rows[0][0].price_timestamp is not None
+            else None
+        ),
         selected_group=selected_group,
         available_groups=_group_options(
             db,

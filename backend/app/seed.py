@@ -41,6 +41,9 @@ def _ensure_prediction_columns() -> None:
         "market_regime": "VARCHAR(32)",
         "quality_tag": "VARCHAR(32)",
         "quality_reason": "VARCHAR(255)",
+        "is_preview": "BOOLEAN DEFAULT 0",
+        "price_status": "VARCHAR(32) DEFAULT 'final_close'",
+        "price_timestamp": "DATETIME",
     }
     missing = [(name, ddl) for name, ddl in columns.items() if name not in existing]
     if not missing:
