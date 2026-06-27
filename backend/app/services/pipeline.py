@@ -36,6 +36,7 @@ from app.config import settings
 from app.models import (
     AIReport,
     DailyPrediction,
+    DailyInstitutionalFlow,
     DailyPrice,
     DataSourceState,
     MarketScore,
@@ -109,6 +110,44 @@ def _persist_prices(db: Session, engine: StockScoreEngine, as_of: date) -> None:
             row.volume = c.volume
             row.change_pct = c.change_pct
     db.commit()
+
+
+def _persist_institutional_flows(
+    db: Session,
+    engine: StockScoreEngine,
+    as_of: date,
+) -> int:
+    """Persist institutional flows for dates needed by prediction backtests."""
+    dates = db.execute(
+        select(DailyPrice.trade_date)
+        .where(DailyPrice.trade_date <= as_of)
+        .distinct()
+        .order_by(DailyPrice.trade_date.desc())
+        .limit(settings.prediction_lookback_days + 20)
+    ).scalars().all()
+    count = 0
+    for trade_date in dates:
+        for meta in UNIVERSE:
+            flow = engine.collectors.institutional.fetch_flow(meta.stock_id, trade_date)
+            row = db.execute(
+                select(DailyInstitutionalFlow)
+                .where(DailyInstitutionalFlow.stock_id == meta.stock_id)
+                .where(DailyInstitutionalFlow.trade_date == trade_date)
+            ).scalar_one_or_none()
+            if row is None:
+                row = DailyInstitutionalFlow(
+                    stock_id=meta.stock_id,
+                    trade_date=trade_date,
+                )
+                db.add(row)
+            row.data_source = getattr(engine.collectors.institutional, "source", "mock")
+            row.foreign_net = flow.foreign_net
+            row.trust_net = flow.trust_net
+            row.dealer_net = flow.dealer_net
+            row.total_net = flow.foreign_net + flow.trust_net + flow.dealer_net
+            count += 1
+    db.commit()
+    return count
 
 
 def _persist_stock_scores(
@@ -190,7 +229,11 @@ def _persist_market_score(
                 **market.notes,
                 "price_source": price_source,
                 "other_sources": other_sources,
-                "prediction_methodology": "technical_eod_v1",
+                "prediction_methodology": (
+                    "technical_eod_v1,"
+                    "technical_eod_v2_candidate,"
+                    "technical_eod_v3_institutional"
+                ),
             },
         )
     )
@@ -205,6 +248,7 @@ def _prepare_data_source(db: Session, provider: str) -> None:
     if has_prices is not None:
         db.execute(delete(PredictionOutcome))
         db.execute(delete(DailyPrediction))
+        db.execute(delete(DailyInstitutionalFlow))
         db.execute(delete(AIReport))
         db.execute(delete(StockScore))
         db.execute(delete(SectorScore))
@@ -257,6 +301,7 @@ def run_daily_pipeline(db: Session, as_of: date) -> dict:
     scores = [r for meta in UNIVERSE if (r := engine.score(meta, analysis_date))]
 
     _persist_prices(db, engine, analysis_date)
+    institutional_flows = _persist_institutional_flows(db, engine, analysis_date)
     _persist_stock_scores(db, scores, analysis_date)
     _persist_sector_scores(db, scores, analysis_date)
     _persist_market_score(
@@ -292,6 +337,7 @@ def run_daily_pipeline(db: Session, as_of: date) -> dict:
         "price_source": collectors.price_source,
         "predictions": predictions,
         "evaluated_outcomes": outcomes,
+        "institutional_flows": institutional_flows,
     }
     logger.info("Pipeline complete: %s", summary)
     return summary

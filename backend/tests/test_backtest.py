@@ -6,10 +6,17 @@ from sqlalchemy.orm import Session
 
 import app.models  # noqa: F401
 from app.database import Base
-from app.models import DailyPrediction, DailyPrice, PredictionOutcome, Stock
+from app.models import (
+    DailyInstitutionalFlow,
+    DailyPrediction,
+    DailyPrice,
+    PredictionOutcome,
+    Stock,
+)
 from app.alpha.features.technical_features import calculate_market_breadth
 from app.services.backtest import (
     METHODOLOGY_V2_CANDIDATE,
+    METHODOLOGY_V3_INSTITUTIONAL,
     _adjusted_score,
     build_predictions,
     evaluate_predictions,
@@ -257,3 +264,64 @@ def test_v2_predictions_and_backtest_can_be_queried():
         assert predictions.items[0].quality_tag is not None
         assert summary.methodology == METHODOLOGY_V2_CANDIDATE
         assert {item.horizon_days for item in summary.horizons} == {1, 3, 5, 10}
+
+
+def test_v3_institutional_flow_adjusts_scores_and_can_be_queried():
+    engine = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_prices(db)
+        latest_date = db.execute(
+            select(DailyPrice.trade_date).order_by(DailyPrice.trade_date.desc())
+        ).scalars().first()
+        db.add(
+            DailyInstitutionalFlow(
+                stock_id="AAA",
+                trade_date=latest_date,
+                data_source="test",
+                foreign_net=1500,
+                trust_net=800,
+                dealer_net=200,
+                total_net=2500,
+            )
+        )
+        db.add(
+            DailyInstitutionalFlow(
+                stock_id="BBB",
+                trade_date=latest_date,
+                data_source="test",
+                foreign_net=-1500,
+                trust_net=-800,
+                dealer_net=-200,
+                total_net=-2500,
+            )
+        )
+        db.commit()
+
+        build_predictions(
+            db,
+            lookback_days=1,
+            methodology=METHODOLOGY_V3_INSTITUTIONAL,
+        )
+        evaluate_predictions(
+            db,
+            horizons=(1,),
+            methodology=METHODOLOGY_V3_INSTITUTIONAL,
+        )
+
+        from app.services.backtest import get_latest_predictions
+
+        predictions = get_latest_predictions(
+            db,
+            methodology=METHODOLOGY_V3_INSTITUTIONAL,
+        )
+        summary = get_backtest_summary(
+            db,
+            methodology=METHODOLOGY_V3_INSTITUTIONAL,
+        )
+
+        aaa = next(item for item in predictions.items if item.stock_id == "AAA")
+        assert aaa.institutional_total_net == 2500
+        assert aaa.institutional_tag == "institutional_accumulation"
+        assert aaa.adjusted_score > aaa.signal_score
+        assert summary.methodology == METHODOLOGY_V3_INSTITUTIONAL

@@ -20,7 +20,13 @@ from app.alpha.features.technical_features import (
 from app.alpha.indicators import clamp
 from app.domain.simulator import Candle, Fundamentals, InstitutionalFlow
 from app.domain.universe import StockMeta, all_hot_topics, stocks_for_topic
-from app.models import DailyPrediction, DailyPrice, PredictionOutcome, Stock
+from app.models import (
+    DailyInstitutionalFlow,
+    DailyPrediction,
+    DailyPrice,
+    PredictionOutcome,
+    Stock,
+)
 from app.schemas.backtest import (
     BacktestHorizon,
     BacktestSummary,
@@ -33,12 +39,14 @@ from app.schemas.backtest import (
 
 METHODOLOGY_V1 = "technical_eod_v1"
 METHODOLOGY_V2_CANDIDATE = "technical_eod_v2_candidate"
+METHODOLOGY_V3_INSTITUTIONAL = "technical_eod_v3_institutional"
 METHODOLOGY_INTRADAY_PREVIEW_V1 = "technical_intraday_preview_v1"
 METHODOLOGY_INTRADAY_PREVIEW_V2_CANDIDATE = "technical_intraday_preview_v2_candidate"
 METHODOLOGY = METHODOLOGY_V1
 SUPPORTED_METHODOLOGIES = {
     METHODOLOGY_V1,
     METHODOLOGY_V2_CANDIDATE,
+    METHODOLOGY_V3_INSTITUTIONAL,
     METHODOLOGY_INTRADAY_PREVIEW_V1,
     METHODOLOGY_INTRADAY_PREVIEW_V2_CANDIDATE,
 }
@@ -136,8 +144,13 @@ def _normalize_methodology(methodology: str) -> str:
 def _is_v2_methodology(methodology: str) -> bool:
     return methodology in {
         METHODOLOGY_V2_CANDIDATE,
+        METHODOLOGY_V3_INSTITUTIONAL,
         METHODOLOGY_INTRADAY_PREVIEW_V2_CANDIDATE,
     }
+
+
+def _is_v3_methodology(methodology: str) -> bool:
+    return methodology == METHODOLOGY_V3_INSTITUTIONAL
 
 
 def _is_preview_methodology(methodology: str) -> bool:
@@ -223,6 +236,40 @@ def _adjusted_score(
     return round(clamp(adjusted), 1)
 
 
+def _institutional_signal(
+    *,
+    flow: DailyInstitutionalFlow | None,
+    prices: list[Any],
+) -> tuple[float, str | None, str | None, float | None]:
+    if flow is None:
+        return 0.0, None, None, None
+    avg_volume_k = (
+        sum(float(price.volume) for price in prices[-5:]) / len(prices[-5:]) / 1000
+        if prices
+        else 1.0
+    ) or 1.0
+    intensity = flow.total_net / avg_volume_k
+    adjustment = round(max(-12.0, min(12.0, intensity * 10)), 1)
+    if flow.total_net > 0 and flow.foreign_net > 0 and flow.trust_net > 0:
+        adjustment += 5
+        tag = "institutional_accumulation"
+        reason = "外資與投信同步買超，法人買盤支持。"
+    elif flow.total_net < 0 and flow.foreign_net < 0 and flow.trust_net < 0:
+        adjustment -= 5
+        tag = "institutional_distribution"
+        reason = "外資與投信同步賣超，法人籌碼轉弱。"
+    elif flow.total_net > 0:
+        tag = "net_buy"
+        reason = "三大法人合計買超，籌碼偏多。"
+    elif flow.total_net < 0:
+        tag = "net_sell"
+        reason = "三大法人合計賣超，籌碼偏空。"
+    else:
+        tag = "neutral"
+        reason = "三大法人合計買賣超接近中性。"
+    return round(adjustment, 1), tag, reason, round(intensity, 3)
+
+
 def _prediction_item(
     prediction: DailyPrediction,
     stock: Stock,
@@ -247,6 +294,13 @@ def _prediction_item(
         market_regime=prediction.market_regime,
         quality_tag=prediction.quality_tag,
         quality_reason=prediction.quality_reason,
+        institutional_foreign_net=prediction.institutional_foreign_net,
+        institutional_trust_net=prediction.institutional_trust_net,
+        institutional_dealer_net=prediction.institutional_dealer_net,
+        institutional_total_net=prediction.institutional_total_net,
+        institutional_intensity=prediction.institutional_intensity,
+        institutional_tag=prediction.institutional_tag,
+        institutional_reason=prediction.institutional_reason,
         is_preview=bool(prediction.is_preview),
         price_status=prediction.price_status or "final_close",
         price_timestamp=(
@@ -310,6 +364,12 @@ def build_predictions(
             current_date: calculate_market_breadth(prices_by_stock, current_date)
             for current_date in dates
         }
+    institutional_flows: dict[tuple[str, date], DailyInstitutionalFlow] = {}
+    if _is_v3_methodology(methodology):
+        flows = db.execute(select(DailyInstitutionalFlow)).scalars().all()
+        institutional_flows = {
+            (flow.stock_id, flow.trade_date): flow for flow in flows
+        }
 
     for stock in stocks:
         prices = prices_by_stock[stock.stock_id]
@@ -345,6 +405,14 @@ def build_predictions(
             market_regime = None
             quality_tag = None
             quality_reason = None
+            institutional_adjustment = 0.0
+            institutional_foreign_net = None
+            institutional_trust_net = None
+            institutional_dealer_net = None
+            institutional_total_net = None
+            institutional_intensity = None
+            institutional_tag = None
+            institutional_reason = None
             if _is_v2_methodology(methodology):
                 market_breadth = market_breadth_by_date.get(prices[index].trade_date, 0.0)
                 rsi_14 = calculate_rsi_14(window)
@@ -368,6 +436,22 @@ def build_predictions(
                     market_breadth=market_breadth,
                     quality_tag=quality_tag,
                 )
+            if _is_v3_methodology(methodology):
+                flow = institutional_flows.get(
+                    (stock.stock_id, prices[index].trade_date)
+                )
+                (
+                    institutional_adjustment,
+                    institutional_tag,
+                    institutional_reason,
+                    institutional_intensity,
+                ) = _institutional_signal(flow=flow, prices=window)
+                adjusted_score = round(clamp(adjusted_score + institutional_adjustment), 1)
+                if flow is not None:
+                    institutional_foreign_net = flow.foreign_net
+                    institutional_trust_net = flow.trust_net
+                    institutional_dealer_net = flow.dealer_net
+                    institutional_total_net = flow.total_net
             generated.append(
                 DailyPrediction(
                     stock_id=stock.stock_id,
@@ -384,6 +468,13 @@ def build_predictions(
                     market_regime=market_regime,
                     quality_tag=quality_tag,
                     quality_reason=quality_reason,
+                    institutional_foreign_net=institutional_foreign_net,
+                    institutional_trust_net=institutional_trust_net,
+                    institutional_dealer_net=institutional_dealer_net,
+                    institutional_total_net=institutional_total_net,
+                    institutional_intensity=institutional_intensity,
+                    institutional_tag=institutional_tag,
+                    institutional_reason=institutional_reason,
                     is_preview=is_preview,
                     price_status=price_status,
                     price_timestamp=price_timestamp,
@@ -480,7 +571,11 @@ def build_all_predictions(
     data_source: str = DATA_SOURCE,
 ) -> int:
     total = 0
-    for methodology in (METHODOLOGY_V1, METHODOLOGY_V2_CANDIDATE):
+    for methodology in (
+        METHODOLOGY_V1,
+        METHODOLOGY_V2_CANDIDATE,
+        METHODOLOGY_V3_INSTITUTIONAL,
+    ):
         total += build_predictions(
             db,
             lookback_days=lookback_days,
@@ -572,7 +667,11 @@ def evaluate_all_predictions(
     horizons: tuple[int, ...] = (1, 3, 5, 10),
 ) -> int:
     total = 0
-    for methodology in (METHODOLOGY_V1, METHODOLOGY_V2_CANDIDATE):
+    for methodology in (
+        METHODOLOGY_V1,
+        METHODOLOGY_V2_CANDIDATE,
+        METHODOLOGY_V3_INSTITUTIONAL,
+    ):
         total += evaluate_predictions(
             db,
             horizons=horizons,
@@ -867,6 +966,13 @@ def get_daily_prediction_results(
                 market_regime=prediction.market_regime,
                 quality_tag=prediction.quality_tag,
                 quality_reason=prediction.quality_reason,
+                institutional_foreign_net=prediction.institutional_foreign_net,
+                institutional_trust_net=prediction.institutional_trust_net,
+                institutional_dealer_net=prediction.institutional_dealer_net,
+                institutional_total_net=prediction.institutional_total_net,
+                institutional_intensity=prediction.institutional_intensity,
+                institutional_tag=prediction.institutional_tag,
+                institutional_reason=prediction.institutional_reason,
                 is_preview=bool(prediction.is_preview),
                 price_status=prediction.price_status or "final_close",
                 price_timestamp=(

@@ -77,7 +77,7 @@ docker compose up --build
 建立每日技術預測與 1／3／5／10 日 walk-forward 回測。首次下載可能需要數分鐘，無需 API key。
 第一次 `up` 後請等待 backend 日誌出現 `Pipeline complete` 再開啟前端。
 
-> 目前只有價格資料為官方真實資料；籌碼、財報、新聞與 AI 報告仍使用 mock。
+> 目前價格與三大法人盤後買賣超使用 TWSE／TPEx 官方資料；財報、新聞與 AI 報告仍使用 mock。
 > 「預測驗證」頁的 `technical_eod_v1` 僅使用真實收盤 OHLCV，與混合資料的完整 Alpha Score 分開呈現。
 
 > 想用真實 LLM 產生報告？複製 `.env.example` 為 `.env`，設定
@@ -181,7 +181,7 @@ pytest                      # 核心引擎測試（indicators / alpha / ai）
 
 ## 🛣️ 開發流程與未來擴充
 
-1. **真實籌碼資料** — 接入 TWSE／TPEx 三大法人與融資融券盤後資料。
+1. **籌碼資料深化** — 已接入 TWSE／TPEx 三大法人盤後資料，後續補融資融券與外資持股。
 2. **真實基本面** — 接入公開資訊觀測站財報與月營收。
 3. **合法新聞來源** — 取代題材面的 mock 新聞。
 4. **模型驗證深化** — 納入交易成本、最大回撤與不同市場狀態切片。
@@ -190,6 +190,7 @@ pytest                      # 核心引擎測試（indicators / alpha / ai）
 策略使用方式與計分細節請見 [`docs/RECOMMENDATION_STRATEGY.md`](docs/RECOMMENDATION_STRATEGY.md)。
 預測公式與外部審核重現步驟請見 [`docs/PREDICTION_METHODOLOGY_AUDIT.md`](docs/PREDICTION_METHODOLOGY_AUDIT.md)。
 v2 候選模型說明請見 [`docs/TECHNICAL_EOD_V2_CANDIDATE.md`](docs/TECHNICAL_EOD_V2_CANDIDATE.md)。
+v3 法人籌碼模型說明請見 [`docs/TECHNICAL_EOD_V3_INSTITUTIONAL.md`](docs/TECHNICAL_EOD_V3_INSTITUTIONAL.md)。
 盤中未收盤暫估說明請見 [`docs/INTRADAY_PREVIEW.md`](docs/INTRADAY_PREVIEW.md)。
 系統架構與設計決策請見 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
@@ -197,5 +198,5 @@ v2 候選模型說明請見 [`docs/TECHNICAL_EOD_V2_CANDIDATE.md`](docs/TECHNICA
 
 ## ⚠️ 免責聲明
 
-價格與技術預測使用 TWSE／TPEx 官方盤後資料；籌碼、財報、新聞及完整 Alpha Score
-目前仍包含模擬資料。所有評分與回測僅供研究，**不構成任何投資建議**。
+價格、技術預測與三大法人盤後買賣超使用 TWSE／TPEx 官方資料；財報、新聞及完整 Alpha Score
+目前仍包含模擬資料或展示資料。所有評分與回測僅供研究，**不構成任何投資建議**。

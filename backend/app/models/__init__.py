@@ -4,6 +4,7 @@ Importing this package registers every model on the shared Base metadata so
 ``Base.metadata.create_all`` sees all tables.
 """
 from app.models.market import MarketScore
+from app.models.institutional import DailyInstitutionalFlow
 from app.models.price import DailyPrice
 from app.models.prediction import DailyPrediction, DataSourceState, PredictionOutcome
 from app.models.report import AIReport
@@ -17,6 +18,7 @@ __all__ = [
     "StockScore",
     "SectorScore",
     "MarketScore",
+    "DailyInstitutionalFlow",
     "AIReport",
     "DailyPrediction",
     "PredictionOutcome",

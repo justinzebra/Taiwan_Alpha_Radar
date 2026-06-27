@@ -1,8 +1,8 @@
 """Collector registry.
 
-Returns the active set of collectors based on configuration. Today everything
-is the mock provider; flipping to a real feed is a one-line change here once a
-real collector is implemented.
+Returns the active set of collectors based on configuration. The default mock
+bundle is still useful for offline demos; ``official_close`` uses official
+TWSE/TPEx close prices and end-of-day institutional flows.
 """
 from __future__ import annotations
 
@@ -17,6 +17,9 @@ from app.collectors.base import (
 from app.collectors.financial.mock_financial_collector import MockFinancialCollector
 from app.collectors.institutional.mock_institutional_collector import (
     MockInstitutionalCollector,
+)
+from app.collectors.institutional.official_institutional_collector import (
+    OfficialInstitutionalCollector,
 )
 from app.collectors.market.mock_price_collector import MockPriceCollector
 from app.collectors.market.official_close_collector import OfficialClosePriceCollector
@@ -38,7 +41,7 @@ class CollectorBundle:
 def get_collectors(provider: str = "mock") -> CollectorBundle:
     """Factory for the active collector bundle.
 
-    To add a real feed: implement the four ABCs and branch on ``provider`` here.
+    To add another real feed: implement the ABCs and branch on ``provider`` here.
     """
     if provider == "mock":
         return CollectorBundle(
@@ -52,10 +55,10 @@ def get_collectors(provider: str = "mock") -> CollectorBundle:
     if provider == "official_close":
         return CollectorBundle(
             price=OfficialClosePriceCollector(),
-            institutional=MockInstitutionalCollector(),
+            institutional=OfficialInstitutionalCollector(),
             financial=MockFinancialCollector(),
             news=MockNewsCollector(),
             price_source="twse_tpex_official",
-            other_sources="mock",
+            other_sources="institutional:twse_tpex_official; financial/news:mock",
         )
     raise ValueError(f"Unknown data provider: {provider!r}")

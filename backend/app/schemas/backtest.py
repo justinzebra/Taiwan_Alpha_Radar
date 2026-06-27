@@ -34,6 +34,13 @@ class PredictionItem(BaseModel):
     market_regime: str | None = None
     quality_tag: str | None = None
     quality_reason: str | None = None
+    institutional_foreign_net: int | None = None
+    institutional_trust_net: int | None = None
+    institutional_dealer_net: int | None = None
+    institutional_total_net: int | None = None
+    institutional_intensity: float | None = None
+    institutional_tag: str | None = None
+    institutional_reason: str | None = None
     is_preview: bool = False
     price_status: str = "final_close"
     price_timestamp: str | None = None
@@ -71,6 +78,13 @@ class DailyPredictionResultItem(BaseModel):
     market_regime: str | None = None
     quality_tag: str | None = None
     quality_reason: str | None = None
+    institutional_foreign_net: int | None = None
+    institutional_trust_net: int | None = None
+    institutional_dealer_net: int | None = None
+    institutional_total_net: int | None = None
+    institutional_intensity: float | None = None
+    institutional_tag: str | None = None
+    institutional_reason: str | None = None
     is_preview: bool = False
     price_status: str = "final_close"
     price_timestamp: str | None = None

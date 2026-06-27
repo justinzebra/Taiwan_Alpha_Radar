@@ -20,6 +20,7 @@ import type { PredictionGroupOption } from "@/lib/types";
 const METHODOLOGIES = [
   { value: "technical_eod_v1", label: "v1 基準模型" },
   { value: "technical_eod_v2_candidate", label: "v2 候選模型" },
+  { value: "technical_eod_v3_institutional", label: "v3 法人籌碼模型" },
   { value: "technical_intraday_preview_v1", label: "盤中暫估 v1" },
   {
     value: "technical_intraday_preview_v2_candidate",
@@ -40,6 +41,14 @@ const REGIME_LABELS: Record<string, string> = {
   risk_off: "風險偏低",
 };
 
+const INSTITUTIONAL_LABELS: Record<string, string> = {
+  institutional_accumulation: "法人買盤",
+  institutional_distribution: "法人賣壓",
+  net_buy: "合計買超",
+  net_sell: "合計賣超",
+  neutral: "法人中性",
+};
+
 function fmtBreadth(value: number | null) {
   return value === null ? "-" : `${(value * 100).toFixed(0)}%`;
 }
@@ -50,6 +59,10 @@ function qualityLabel(value: string | null) {
 
 function regimeLabel(value: string | null) {
   return value ? REGIME_LABELS[value] ?? value : "-";
+}
+
+function institutionalLabel(value: string | null) {
+  return value ? INSTITUTIONAL_LABELS[value] ?? value : "-";
 }
 
 function groupLabel(value: string) {
@@ -246,6 +259,8 @@ function DailyScorecard({
                 <th className="px-3 py-2 text-right">市場廣度</th>
                 <th className="px-3 py-2 text-right">市場狀態</th>
                 <th className="px-3 py-2 text-right">品質</th>
+                <th className="px-3 py-2 text-right">法人合計</th>
+                <th className="px-3 py-2 text-right">法人狀態</th>
                 <th className="px-3 py-2 text-right">方向</th>
                 <th className="px-3 py-2 text-right">預測日收盤</th>
                 <th className="px-3 py-2 text-right">結果日開盤</th>
@@ -285,6 +300,18 @@ function DailyScorecard({
                   <td className="px-3 py-3 text-right">
                     <Badge variant={item.quality_tag === "high_quality" ? "bull" : item.quality_tag === "watch_only" ? "outline" : "gold"}>
                       {qualityLabel(item.quality_tag)}
+                    </Badge>
+                  </td>
+                  <td className={cn("px-3 py-3 text-right tnum", dirColor(item.institutional_total_net ?? 0))}>
+                    {item.institutional_total_net === null
+                      ? "-"
+                      : item.institutional_total_net.toLocaleString()}
+                  </td>
+                  <td className="px-3 py-3 text-right">
+                    <Badge
+                      variant={item.institutional_tag === "institutional_accumulation" || item.institutional_tag === "net_buy" ? "bull" : item.institutional_tag === "institutional_distribution" || item.institutional_tag === "net_sell" ? "bear" : "outline"}
+                    >
+                      {institutionalLabel(item.institutional_tag)}
                     </Badge>
                   </td>
                   <td className="px-3 py-3 text-right">
@@ -431,6 +458,8 @@ export default function PredictionsPage() {
                   <th className="px-3 py-2 text-right">市場廣度</th>
                   <th className="px-3 py-2 text-right">市場狀態</th>
                   <th className="px-3 py-2 text-right">品質標籤</th>
+                  <th className="px-3 py-2 text-right">法人合計</th>
+                  <th className="px-3 py-2 text-right">法人狀態</th>
                   <th className="px-3 py-2 text-right">方向</th>
                   <th className="px-3 py-2 text-right">信心度</th>
                 </tr>
@@ -467,6 +496,19 @@ export default function PredictionsPage() {
                         variant={item.quality_tag === "high_quality" ? "bull" : item.quality_tag === "watch_only" ? "outline" : "gold"}
                       >
                         {qualityLabel(item.quality_tag)}
+                      </Badge>
+                    </td>
+                    <td className={cn("px-3 py-3 text-right tnum", dirColor(item.institutional_total_net ?? 0))}>
+                      {item.institutional_total_net === null
+                        ? "-"
+                        : item.institutional_total_net.toLocaleString()}
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <Badge
+                        title={item.institutional_reason ?? undefined}
+                        variant={item.institutional_tag === "institutional_accumulation" || item.institutional_tag === "net_buy" ? "bull" : item.institutional_tag === "institutional_distribution" || item.institutional_tag === "net_sell" ? "bear" : "outline"}
+                      >
+                        {institutionalLabel(item.institutional_tag)}
                       </Badge>
                     </td>
                     <td className="px-3 py-3 text-right">

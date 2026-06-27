@@ -8,7 +8,8 @@
 - 回測與每日對答案如何定義。
 - 目前有哪些偏差與限制。
 
-> 本文件描述的是「預測驗證」頁使用的 `technical_eod_v1`，不是完整 Alpha Score。完整 Alpha Score 仍包含 mock 籌碼、mock 財報與 mock 新聞，不應拿來驗證真實預測能力。
+> 本文件描述的是「預測驗證」頁使用的 `technical_eod_v1`，不是完整 Alpha Score。完整 Alpha Score
+> 已接入部分真實盤後籌碼資料，但財報、新聞與部分籌碼細節仍包含 mock，不應拿來單獨驗證真實預測能力。
 
 ## 1. 核心結論
 

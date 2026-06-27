@@ -71,7 +71,7 @@ export default function DashboardPage() {
                 {data.data_status.price_data_is_real ? "TWSE／TPEx 官方盤後資料" : "模擬資料"}
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                技術預測使用收盤 OHLCV；籌碼、財報與新聞目前仍為 mock，
+                技術預測使用收盤 OHLCV，v3 使用盤後三大法人資料；財報與新聞目前仍為 mock，
                 完整 Alpha Score 尚不可視為全真實資料模型。
               </p>
               {refreshMessage ? (

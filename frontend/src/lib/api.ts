@@ -18,6 +18,7 @@ type RunPipelineResponse = {
     price_source: string;
     predictions: number;
     evaluated_outcomes: number;
+    institutional_flows?: number;
   };
   preview?: {
     status: string;

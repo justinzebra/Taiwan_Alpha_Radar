@@ -102,6 +102,13 @@ export interface PredictionItem {
   market_regime: string | null;
   quality_tag: string | null;
   quality_reason: string | null;
+  institutional_foreign_net: number | null;
+  institutional_trust_net: number | null;
+  institutional_dealer_net: number | null;
+  institutional_total_net: number | null;
+  institutional_intensity: number | null;
+  institutional_tag: string | null;
+  institutional_reason: string | null;
   is_preview: boolean;
   price_status: string;
   price_timestamp: string | null;
@@ -139,6 +146,13 @@ export interface DailyPredictionResultItem {
   market_regime: string | null;
   quality_tag: string | null;
   quality_reason: string | null;
+  institutional_foreign_net: number | null;
+  institutional_trust_net: number | null;
+  institutional_dealer_net: number | null;
+  institutional_total_net: number | null;
+  institutional_intensity: number | null;
+  institutional_tag: string | null;
+  institutional_reason: string | null;
   is_preview: boolean;
   price_status: string;
   price_timestamp: string | null;

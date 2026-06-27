@@ -22,6 +22,7 @@ router = APIRouter()
 MethodologyParam = Literal[
     "technical_eod_v1",
     "technical_eod_v2_candidate",
+    "technical_eod_v3_institutional",
     "technical_intraday_preview_v1",
     "technical_intraday_preview_v2_candidate",
 ]

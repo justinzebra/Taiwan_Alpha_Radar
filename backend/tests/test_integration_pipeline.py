@@ -132,6 +132,15 @@ def test_api_backtest_endpoint(client):
     assert v2_body["methodology"] == "technical_eod_v2_candidate"
     assert {item["horizon_days"] for item in v2_body["horizons"]} == {1, 3, 5, 10}
 
+    v3 = client.get(
+        "/api/backtest",
+        params={"methodology": "technical_eod_v3_institutional"},
+    )
+    assert v3.status_code == 200
+    v3_body = v3.json()
+    assert v3_body["methodology"] == "technical_eod_v3_institutional"
+    assert {item["horizon_days"] for item in v3_body["horizons"]} == {1, 3, 5, 10}
+
 
 def test_api_predictions_returns_latest_ranked_signals(client):
     res = client.get("/api/predictions", params={"limit": 10})
@@ -152,6 +161,16 @@ def test_api_predictions_returns_latest_ranked_signals(client):
     assert len(v2_body["items"]) == 10
     assert all("adjusted_score" in item for item in v2_body["items"])
     assert all(item["quality_tag"] for item in v2_body["items"])
+
+    v3 = client.get(
+        "/api/predictions",
+        params={"limit": 10, "methodology": "technical_eod_v3_institutional"},
+    )
+    assert v3.status_code == 200
+    v3_body = v3.json()
+    assert v3_body["methodology"] == "technical_eod_v3_institutional"
+    assert len(v3_body["items"]) == 10
+    assert all("institutional_total_net" in item for item in v3_body["items"])
 
     topic = client.get(
         "/api/predictions",
