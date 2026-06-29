@@ -20,6 +20,27 @@ class BacktestSummary(BaseModel):
     horizons: list[BacktestHorizon]
 
 
+class RegimeBacktestRow(BaseModel):
+    methodology: str
+    market_regime: str
+    market_regime_label: str
+    horizon_days: int
+    evaluated_predictions: int
+    average_market_breadth_pct: float
+    top10_average_return_pct: float
+    benchmark_return_pct: float
+    top10_excess_return_pct: float
+    top10_win_rate_pct: float
+    direction_accuracy_pct: float
+
+
+class RegimeBacktestResponse(BaseModel):
+    data_source: str
+    prediction_start: str
+    prediction_end: str
+    rows: list[RegimeBacktestRow]
+
+
 class PredictionItem(BaseModel):
     rank: int
     stock_id: str

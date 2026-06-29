@@ -35,6 +35,8 @@ from app.schemas.backtest import (
     PredictionGroupOption,
     PredictionItem,
     PredictionListResponse,
+    RegimeBacktestResponse,
+    RegimeBacktestRow,
 )
 
 METHODOLOGY_V1 = "technical_eod_v1"
@@ -51,6 +53,21 @@ SUPPORTED_METHODOLOGIES = {
     METHODOLOGY_INTRADAY_PREVIEW_V2_CANDIDATE,
 }
 DATA_SOURCE = "twse_tpex_official"
+REGIME_LABELS = {
+    "risk_on": "風險偏多",
+    "neutral_positive": "中性偏多",
+    "risk_off": "風險偏低",
+}
+REGIME_ORDER = {
+    "risk_on": 0,
+    "neutral_positive": 1,
+    "risk_off": 2,
+}
+MODEL_ORDER = {
+    METHODOLOGY_V1: 0,
+    METHODOLOGY_V2_CANDIDATE: 1,
+    METHODOLOGY_V3_INSTITUTIONAL: 2,
+}
 
 _EMPTY_FLOW = InstitutionalFlow(0, 0, 0, 0, 0)
 _EMPTY_FUNDAMENTALS = Fundamentals(0, 0, 0, 0, 0, 0, 0)
@@ -166,6 +183,44 @@ def _market_regime(market_breadth: float) -> str:
     if market_breadth >= 0.5:
         return "neutral_positive"
     return "risk_off"
+
+
+def _market_breadth_by_date(
+    db: Session,
+    prediction_dates: set[date],
+) -> dict[date, tuple[float, str]]:
+    if not prediction_dates:
+        return {}
+    max_date = max(prediction_dates)
+    prices = db.execute(
+        select(DailyPrice)
+        .where(DailyPrice.trade_date <= max_date)
+        .order_by(DailyPrice.stock_id, DailyPrice.trade_date)
+    ).scalars().all()
+    by_stock: dict[str, list[DailyPrice]] = defaultdict(list)
+    for price in prices:
+        by_stock[price.stock_id].append(price)
+
+    up_counts: dict[date, int] = defaultdict(int)
+    total_counts: dict[date, int] = defaultdict(int)
+    for stock_prices in by_stock.values():
+        for index in range(1, len(stock_prices)):
+            current = stock_prices[index]
+            if current.trade_date not in prediction_dates:
+                continue
+            previous = stock_prices[index - 1]
+            if previous.close <= 0:
+                continue
+            total_counts[current.trade_date] += 1
+            if current.close > previous.close:
+                up_counts[current.trade_date] += 1
+
+    result = {}
+    for current_date in prediction_dates:
+        total = total_counts[current_date]
+        breadth = up_counts[current_date] / total if total else 0.0
+        result[current_date] = (breadth, _market_regime(breadth))
+    return result
 
 
 def _quality_tag(
@@ -743,6 +798,113 @@ def get_backtest_summary(
         prediction_start=min(dates).isoformat(),
         prediction_end=max(dates).isoformat(),
         horizons=horizon_rows,
+    )
+
+
+def get_regime_backtest_summary(db: Session) -> RegimeBacktestResponse:
+    methodologies = (
+        METHODOLOGY_V1,
+        METHODOLOGY_V2_CANDIDATE,
+        METHODOLOGY_V3_INSTITUTIONAL,
+    )
+    predictions = db.execute(
+        select(DailyPrediction)
+        .where(DailyPrediction.methodology.in_(methodologies))
+        .where(DailyPrediction.is_preview.is_(False))
+    ).scalars().all()
+    if not predictions:
+        return RegimeBacktestResponse(
+            data_source=DATA_SOURCE,
+            prediction_start="",
+            prediction_end="",
+            rows=[],
+        )
+
+    prediction_by_id = {prediction.id: prediction for prediction in predictions}
+    prediction_dates = {prediction.prediction_date for prediction in predictions}
+    regimes_by_date = _market_breadth_by_date(db, prediction_dates)
+
+    outcomes = db.execute(
+        select(PredictionOutcome)
+        .join(DailyPrediction, DailyPrediction.id == PredictionOutcome.prediction_id)
+        .where(DailyPrediction.methodology.in_(methodologies))
+        .where(DailyPrediction.is_preview.is_(False))
+    ).scalars().all()
+    grouped: dict[tuple[str, str, int], list[tuple[PredictionOutcome, float]]] = (
+        defaultdict(list)
+    )
+    for outcome in outcomes:
+        prediction = prediction_by_id.get(outcome.prediction_id)
+        if prediction is None or prediction.rank > 10:
+            continue
+        breadth, regime = regimes_by_date.get(
+            prediction.prediction_date,
+            (0.0, "risk_off"),
+        )
+        grouped[
+            (prediction.methodology, regime, outcome.horizon_days)
+        ].append((outcome, breadth))
+
+    rows = []
+    for (methodology, regime, horizon), items in grouped.items():
+        if not items:
+            continue
+        regime_outcomes = [item[0] for item in items]
+        breadth_values = [item[1] for item in items]
+        rows.append(
+            RegimeBacktestRow(
+                methodology=methodology,
+                market_regime=regime,
+                market_regime_label=REGIME_LABELS.get(regime, regime),
+                horizon_days=horizon,
+                evaluated_predictions=len(regime_outcomes),
+                average_market_breadth_pct=round(
+                    sum(breadth_values) / len(breadth_values) * 100,
+                    1,
+                ),
+                top10_average_return_pct=round(
+                    sum(row.return_pct for row in regime_outcomes)
+                    / len(regime_outcomes),
+                    2,
+                ),
+                benchmark_return_pct=round(
+                    sum(row.benchmark_return_pct for row in regime_outcomes)
+                    / len(regime_outcomes),
+                    2,
+                ),
+                top10_excess_return_pct=round(
+                    sum(row.excess_return_pct for row in regime_outcomes)
+                    / len(regime_outcomes),
+                    2,
+                ),
+                top10_win_rate_pct=round(
+                    sum(row.return_pct > 0 for row in regime_outcomes)
+                    / len(regime_outcomes)
+                    * 100,
+                    1,
+                ),
+                direction_accuracy_pct=round(
+                    sum(row.direction_correct for row in regime_outcomes)
+                    / len(regime_outcomes)
+                    * 100,
+                    1,
+                ),
+            )
+        )
+
+    dates = [prediction.prediction_date for prediction in predictions]
+    rows.sort(
+        key=lambda row: (
+            REGIME_ORDER.get(row.market_regime, 99),
+            row.horizon_days,
+            MODEL_ORDER.get(row.methodology, 99),
+        )
+    )
+    return RegimeBacktestResponse(
+        data_source=predictions[0].data_source,
+        prediction_start=min(dates).isoformat(),
+        prediction_end=max(dates).isoformat(),
+        rows=rows,
     )
 
 

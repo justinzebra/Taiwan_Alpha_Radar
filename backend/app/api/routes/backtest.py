@@ -10,12 +10,14 @@ from app.schemas.backtest import (
     BacktestSummary,
     DailyPredictionResultResponse,
     PredictionListResponse,
+    RegimeBacktestResponse,
 )
 from app.services.backtest import (
     METHODOLOGY_V1,
     get_backtest_summary,
     get_daily_prediction_results,
     get_latest_predictions,
+    get_regime_backtest_summary,
 )
 
 router = APIRouter()
@@ -34,6 +36,11 @@ def read_backtest(
     db: Session = Depends(get_db),
 ) -> BacktestSummary:
     return get_backtest_summary(db, methodology=methodology)
+
+
+@router.get("/backtest/regimes", response_model=RegimeBacktestResponse)
+def read_regime_backtest(db: Session = Depends(get_db)) -> RegimeBacktestResponse:
+    return get_regime_backtest_summary(db)
 
 
 @router.get("/predictions", response_model=PredictionListResponse)

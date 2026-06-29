@@ -204,6 +204,27 @@ export interface BacktestSummary {
   horizons: BacktestHorizon[];
 }
 
+export interface RegimeBacktestRow {
+  methodology: string;
+  market_regime: string;
+  market_regime_label: string;
+  horizon_days: number;
+  evaluated_predictions: number;
+  average_market_breadth_pct: number;
+  top10_average_return_pct: number;
+  benchmark_return_pct: number;
+  top10_excess_return_pct: number;
+  top10_win_rate_pct: number;
+  direction_accuracy_pct: number;
+}
+
+export interface RegimeBacktestResponse {
+  data_source: string;
+  prediction_start: string;
+  prediction_end: string;
+  rows: RegimeBacktestRow[];
+}
+
 export interface DimensionDetail {
   key: string;
   label: string;

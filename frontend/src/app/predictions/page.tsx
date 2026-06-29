@@ -15,7 +15,7 @@ import { cn, dirColor, fmtNumber, fmtPct, scoreColor } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorPanel, LoadingPanel } from "@/components/common/States";
-import type { PredictionGroupOption } from "@/lib/types";
+import type { PredictionGroupOption, RegimeBacktestRow } from "@/lib/types";
 
 const METHODOLOGIES = [
   { value: "technical_eod_v1", label: "v1 基準模型" },
@@ -49,6 +49,12 @@ const INSTITUTIONAL_LABELS: Record<string, string> = {
   neutral: "法人中性",
 };
 
+const MODEL_LABELS: Record<string, string> = {
+  technical_eod_v1: "V1",
+  technical_eod_v2_candidate: "V2",
+  technical_eod_v3_institutional: "V3",
+};
+
 function fmtBreadth(value: number | null) {
   return value === null ? "-" : `${(value * 100).toFixed(0)}%`;
 }
@@ -63,6 +69,10 @@ function regimeLabel(value: string | null) {
 
 function institutionalLabel(value: string | null) {
   return value ? INSTITUTIONAL_LABELS[value] ?? value : "-";
+}
+
+function modelLabel(value: string) {
+  return MODEL_LABELS[value] ?? value;
 }
 
 function groupLabel(value: string) {
@@ -350,6 +360,100 @@ function DailyScorecard({
   );
 }
 
+function RegimeBacktestCard({
+  rows,
+  predictionStart,
+  predictionEnd,
+}: {
+  rows: RegimeBacktestRow[];
+  predictionStart: string;
+  predictionEnd: string;
+}) {
+  if (!rows.length) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4" /> 市場狀態分層回測
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          比較 V1 / V2 / V3 在不同市場廣度下的 Top 10 表現；期間{" "}
+          {predictionStart || "-"} 至 {predictionEnd || "-"}。
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[980px] border-collapse text-sm">
+            <thead>
+              <tr className="text-left text-xs text-muted-foreground">
+                <th className="px-3 py-2">市場狀態</th>
+                <th className="px-3 py-2 text-right">平均廣度</th>
+                <th className="px-3 py-2 text-right">週期</th>
+                <th className="px-3 py-2 text-right">模型</th>
+                <th className="px-3 py-2 text-right">勝率</th>
+                <th className="px-3 py-2 text-right">方向命中</th>
+                <th className="px-3 py-2 text-right">Top 10 平均</th>
+                <th className="px-3 py-2 text-right">超額報酬</th>
+                <th className="px-3 py-2 text-right">樣本</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr
+                  key={`${row.market_regime}-${row.horizon_days}-${row.methodology}`}
+                  className="border-t border-border/50"
+                >
+                  <td className="px-3 py-3">
+                    <Badge
+                      variant={
+                        row.market_regime === "risk_on"
+                          ? "bull"
+                          : row.market_regime === "risk_off"
+                            ? "outline"
+                            : "gold"
+                      }
+                    >
+                      {row.market_regime_label}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-3 text-right tnum">
+                    {row.average_market_breadth_pct.toFixed(1)}%
+                  </td>
+                  <td className="px-3 py-3 text-right tnum">
+                    {row.horizon_days} 日
+                  </td>
+                  <td className="px-3 py-3 text-right font-medium">
+                    {modelLabel(row.methodology)}
+                  </td>
+                  <td className="px-3 py-3 text-right tnum">
+                    {row.top10_win_rate_pct.toFixed(1)}%
+                  </td>
+                  <td className="px-3 py-3 text-right tnum">
+                    {row.direction_accuracy_pct.toFixed(1)}%
+                  </td>
+                  <td className={cn("px-3 py-3 text-right tnum", dirColor(row.top10_average_return_pct))}>
+                    {fmtPct(row.top10_average_return_pct)}
+                  </td>
+                  <td className={cn("px-3 py-3 text-right tnum font-medium", dirColor(row.top10_excess_return_pct))}>
+                    {fmtPct(row.top10_excess_return_pct)}
+                  </td>
+                  <td className="px-3 py-3 text-right tnum">
+                    {row.evaluated_predictions}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+          市場狀態以當日股票池上漲家數占比重新計算：60% 以上為風險偏多，
+          50% 至 60% 為中性偏多，低於 50% 為風險偏低。這張表用來檢查模型是否只在大盤順風時有效。
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function PredictionsPage() {
   const [selectedGroup, setSelectedGroup] = useState("");
   const [methodology, setMethodology] = useState("technical_eod_v1");
@@ -358,10 +462,29 @@ export default function PredictionsPage() {
     [selectedGroup, methodology],
   );
   const backtest = useApi(() => api.backtest(methodology), [methodology]);
+  const regimeBacktest = useApi(() => api.regimeBacktest(), []);
 
-  if (predictions.loading || backtest.loading) return <LoadingPanel />;
-  if (predictions.error || backtest.error || !predictions.data || !backtest.data) {
-    return <ErrorPanel message={predictions.error ?? backtest.error ?? "無資料"} />;
+  if (predictions.loading || backtest.loading || regimeBacktest.loading) {
+    return <LoadingPanel />;
+  }
+  if (
+    predictions.error ||
+    backtest.error ||
+    regimeBacktest.error ||
+    !predictions.data ||
+    !backtest.data ||
+    !regimeBacktest.data
+  ) {
+    return (
+      <ErrorPanel
+        message={
+          predictions.error ??
+          backtest.error ??
+          regimeBacktest.error ??
+          "無資料"
+        }
+      />
+    );
   }
 
   return (
@@ -540,7 +663,7 @@ export default function PredictionsPage() {
         <CardContent>
           <div className="mb-4 text-xs text-muted-foreground">
             {predictions.data.is_preview
-              ? "未收盤暫估不納入正式 walk-forward 回測；請切回 v1 / v2 收盤模型比較績效。"
+              ? "未收盤暫估不納入正式 walk-forward 回測；請切回 v1 / v2 / v3 收盤模型比較績效。"
               : `期間 ${backtest.data.prediction_start || "-"} 至 ${backtest.data.prediction_end || "-"}；基準為股票池等權報酬。`}
           </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -563,6 +686,12 @@ export default function PredictionsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <RegimeBacktestCard
+        rows={regimeBacktest.data.rows}
+        predictionStart={regimeBacktest.data.prediction_start}
+        predictionEnd={regimeBacktest.data.prediction_end}
+      />
     </div>
   );
 }

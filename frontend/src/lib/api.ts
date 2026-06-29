@@ -7,6 +7,7 @@ import type {
   StockDetailResponse,
   StockListResponse,
   PredictionListResponse,
+  RegimeBacktestResponse,
 } from "./types";
 
 type RunPipelineResponse = {
@@ -96,6 +97,7 @@ export const api = {
     if (methodology) q.set("methodology", methodology);
     return getJSON<BacktestSummary>(`/backtest?${q.toString()}`);
   },
+  regimeBacktest: () => getJSON<RegimeBacktestResponse>("/backtest/regimes"),
   runPipeline: () =>
     getJSON<RunPipelineResponse>("/admin/run-pipeline", { method: "POST" }),
 };

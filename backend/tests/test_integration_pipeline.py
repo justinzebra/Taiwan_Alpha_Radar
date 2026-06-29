@@ -141,6 +141,19 @@ def test_api_backtest_endpoint(client):
     assert v3_body["methodology"] == "technical_eod_v3_institutional"
     assert {item["horizon_days"] for item in v3_body["horizons"]} == {1, 3, 5, 10}
 
+    regimes = client.get("/api/backtest/regimes")
+    assert regimes.status_code == 200
+    regime_body = regimes.json()
+    assert regime_body["rows"]
+    assert {
+        row["methodology"] for row in regime_body["rows"]
+    } >= {
+        "technical_eod_v1",
+        "technical_eod_v2_candidate",
+        "technical_eod_v3_institutional",
+    }
+    assert all("market_regime" in row for row in regime_body["rows"])
+
 
 def test_api_predictions_returns_latest_ranked_signals(client):
     res = client.get("/api/predictions", params={"limit": 10})

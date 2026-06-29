@@ -22,6 +22,7 @@ from app.services.backtest import (
     evaluate_predictions,
     get_backtest_summary,
     get_daily_prediction_results,
+    get_regime_backtest_summary,
 )
 
 
@@ -325,3 +326,22 @@ def test_v3_institutional_flow_adjusts_scores_and_can_be_queried():
         assert aaa.institutional_tag == "institutional_accumulation"
         assert aaa.adjusted_score > aaa.signal_score
         assert summary.methodology == METHODOLOGY_V3_INSTITUTIONAL
+
+
+def test_regime_backtest_summary_classifies_v1_without_stored_breadth():
+    engine = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_prices(db)
+        build_predictions(db, lookback_days=20)
+        evaluate_predictions(db, horizons=(1,))
+
+        summary = get_regime_backtest_summary(db)
+
+        assert summary.rows
+        row = summary.rows[0]
+        assert row.methodology == "technical_eod_v1"
+        assert row.market_regime == "neutral_positive"
+        assert row.average_market_breadth_pct == 50.0
+        assert row.horizon_days == 1
+        assert row.evaluated_predictions > 0

@@ -151,6 +151,7 @@ taiwan-alpha-radar/
 | GET | `/api/stocks/{stock_id}` | 個股完整分析 + AI 報告 |
 | GET | `/api/predictions` | 最新收盤後技術預測排行 |
 | GET | `/api/backtest` | 1／3／5／10 日 walk-forward 回測 |
+| GET | `/api/backtest/regimes` | 依市場狀態分層比較 V1／V2／V3 回測 |
 | POST | `/api/admin/run-pipeline` | 手動重跑當日分析（展示用） |
 | GET | `/health` | 健康檢查 |
 
