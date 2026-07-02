@@ -55,6 +55,15 @@ const MODEL_LABELS: Record<string, string> = {
   technical_eod_v3_institutional: "V3",
 };
 
+const DATE_INPUT_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+function isValidDateInput(value: string): boolean {
+  const match = DATE_INPUT_PATTERN.exec(value);
+  if (!match) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime());
+}
+
 function fmtBreadth(value: number | null) {
   return value === null ? "-" : `${(value * 100).toFixed(0)}%`;
 }
@@ -457,12 +466,20 @@ function RegimeBacktestCard({
 export default function PredictionsPage() {
   const [selectedGroup, setSelectedGroup] = useState("");
   const [methodology, setMethodology] = useState("technical_eod_v1");
+  const [startDateInput, setStartDateInput] = useState("");
+  const [appliedStartDate, setAppliedStartDate] = useState("");
   const predictions = useApi(
     () => api.predictions(10, selectedGroup, methodology),
     [selectedGroup, methodology],
   );
-  const backtest = useApi(() => api.backtest(methodology), [methodology]);
-  const regimeBacktest = useApi(() => api.regimeBacktest(), []);
+  const backtest = useApi(
+    () => api.backtest(methodology, appliedStartDate || undefined),
+    [methodology, appliedStartDate],
+  );
+  const regimeBacktest = useApi(
+    () => api.regimeBacktest(appliedStartDate || undefined),
+    [appliedStartDate],
+  );
 
   if (predictions.loading || backtest.loading || regimeBacktest.loading) {
     return <LoadingPanel />;
@@ -653,6 +670,56 @@ export default function PredictionsPage() {
         selectedGroup={selectedGroup}
         methodology={methodology}
       />
+
+      <Card>
+        <CardContent className="flex flex-col gap-3 pt-5 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="text-sm font-medium">回測起始日期</div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              限制 Walk-forward 回測與市場狀態分層回測涵蓋的資料範圍；留空則使用全部歷史資料。
+              調整日期後需按「套用」才會重新抓取，不會邊打字邊送出請求。
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <CalendarDays className="h-4 w-4" />
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="YYYY-MM-DD"
+                value={startDateInput}
+                onChange={(event) => setStartDateInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && isValidDateInput(startDateInput)) {
+                    setAppliedStartDate(startDateInput);
+                  }
+                }}
+                className="w-32 rounded-md border border-border bg-background px-3 py-2 text-sm tnum text-foreground outline-none focus:border-primary"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={!isValidDateInput(startDateInput)}
+              onClick={() => setAppliedStartDate(startDateInput)}
+              className="rounded-md bg-primary/15 px-3 py-2 text-sm text-primary ring-1 ring-primary/30 transition-colors hover:bg-primary/25 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-primary/15"
+            >
+              套用
+            </button>
+            {appliedStartDate ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setStartDateInput("");
+                  setAppliedStartDate("");
+                }}
+                className="rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+              >
+                清除
+              </button>
+            ) : null}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

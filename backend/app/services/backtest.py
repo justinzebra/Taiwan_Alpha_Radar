@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import and_, delete, desc, func, select
@@ -191,10 +191,14 @@ def _market_breadth_by_date(
 ) -> dict[date, tuple[float, str]]:
     if not prediction_dates:
         return {}
+    min_date = min(prediction_dates)
     max_date = max(prediction_dates)
     prices = db.execute(
         select(DailyPrice)
         .where(DailyPrice.trade_date <= max_date)
+        # Keep a short lookback before min_date so the earliest prediction
+        # date still has a previous close to compare against.
+        .where(DailyPrice.trade_date >= min_date - timedelta(days=7))
         .order_by(DailyPrice.stock_id, DailyPrice.trade_date)
     ).scalars().all()
     by_stock: dict[str, list[DailyPrice]] = defaultdict(list)
@@ -739,11 +743,17 @@ def get_backtest_summary(
     db: Session,
     *,
     methodology: str = METHODOLOGY_V1,
+    start_date: date | None = None,
 ) -> BacktestSummary:
     methodology = _normalize_methodology(methodology)
-    predictions = db.execute(
-        select(DailyPrediction).where(DailyPrediction.methodology == methodology)
-    ).scalars().all()
+    prediction_query = select(DailyPrediction).where(
+        DailyPrediction.methodology == methodology
+    )
+    if start_date is not None:
+        prediction_query = prediction_query.where(
+            DailyPrediction.prediction_date >= start_date
+        )
+    predictions = db.execute(prediction_query).scalars().all()
     if not predictions:
         return BacktestSummary(
             methodology=methodology,
@@ -753,11 +763,13 @@ def get_backtest_summary(
             horizons=[],
         )
     prediction_by_id = {prediction.id: prediction for prediction in predictions}
-    outcomes = db.execute(
+    outcome_query = (
         select(PredictionOutcome)
         .join(DailyPrediction, DailyPrediction.id == PredictionOutcome.prediction_id)
         .where(DailyPrediction.methodology == methodology)
-    ).scalars().all()
+        .where(DailyPrediction.id.in_(prediction_by_id.keys()))
+    )
+    outcomes = db.execute(outcome_query).scalars().all()
     grouped: dict[int, list[PredictionOutcome]] = defaultdict(list)
     for outcome in outcomes:
         grouped[outcome.horizon_days].append(outcome)
@@ -801,17 +813,26 @@ def get_backtest_summary(
     )
 
 
-def get_regime_backtest_summary(db: Session) -> RegimeBacktestResponse:
+def get_regime_backtest_summary(
+    db: Session,
+    *,
+    start_date: date | None = None,
+) -> RegimeBacktestResponse:
     methodologies = (
         METHODOLOGY_V1,
         METHODOLOGY_V2_CANDIDATE,
         METHODOLOGY_V3_INSTITUTIONAL,
     )
-    predictions = db.execute(
+    prediction_query = (
         select(DailyPrediction)
         .where(DailyPrediction.methodology.in_(methodologies))
         .where(DailyPrediction.is_preview.is_(False))
-    ).scalars().all()
+    )
+    if start_date is not None:
+        prediction_query = prediction_query.where(
+            DailyPrediction.prediction_date >= start_date
+        )
+    predictions = db.execute(prediction_query).scalars().all()
     if not predictions:
         return RegimeBacktestResponse(
             data_source=DATA_SOURCE,
@@ -827,8 +848,7 @@ def get_regime_backtest_summary(db: Session) -> RegimeBacktestResponse:
     outcomes = db.execute(
         select(PredictionOutcome)
         .join(DailyPrediction, DailyPrediction.id == PredictionOutcome.prediction_id)
-        .where(DailyPrediction.methodology.in_(methodologies))
-        .where(DailyPrediction.is_preview.is_(False))
+        .where(DailyPrediction.id.in_(prediction_by_id.keys()))
     ).scalars().all()
     grouped: dict[tuple[str, str, int], list[tuple[PredictionOutcome, float]]] = (
         defaultdict(list)

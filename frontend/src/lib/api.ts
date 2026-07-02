@@ -92,12 +92,17 @@ export const api = {
       `/prediction-results?${q.toString()}`,
     );
   },
-  backtest: (methodology?: string) => {
+  backtest: (methodology?: string, startDate?: string) => {
     const q = new URLSearchParams();
     if (methodology) q.set("methodology", methodology);
+    if (startDate) q.set("start_date", startDate);
     return getJSON<BacktestSummary>(`/backtest?${q.toString()}`);
   },
-  regimeBacktest: () => getJSON<RegimeBacktestResponse>("/backtest/regimes"),
+  regimeBacktest: (startDate?: string) => {
+    const q = new URLSearchParams();
+    if (startDate) q.set("start_date", startDate);
+    return getJSON<RegimeBacktestResponse>(`/backtest/regimes?${q.toString()}`);
+  },
   runPipeline: () =>
     getJSON<RunPipelineResponse>("/admin/run-pipeline", { method: "POST" }),
 };

@@ -41,6 +41,10 @@
 }
 
 body {
+  /* Dark is the only theme (see header comment) — tell native form controls
+     (date pickers, scrollbars, select dropdowns) to render dark, not the
+     OS/browser light default, which otherwise looks broken against --background. */
+  color-scheme: dark;
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
   font-family: var(--font-sans);

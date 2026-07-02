@@ -33,14 +33,18 @@ MethodologyParam = Literal[
 @router.get("/backtest", response_model=BacktestSummary)
 def read_backtest(
     methodology: MethodologyParam = Query(METHODOLOGY_V1),
+    start_date: date | None = Query(None),
     db: Session = Depends(get_db),
 ) -> BacktestSummary:
-    return get_backtest_summary(db, methodology=methodology)
+    return get_backtest_summary(db, methodology=methodology, start_date=start_date)
 
 
 @router.get("/backtest/regimes", response_model=RegimeBacktestResponse)
-def read_regime_backtest(db: Session = Depends(get_db)) -> RegimeBacktestResponse:
-    return get_regime_backtest_summary(db)
+def read_regime_backtest(
+    start_date: date | None = Query(None),
+    db: Session = Depends(get_db),
+) -> RegimeBacktestResponse:
+    return get_regime_backtest_summary(db, start_date=start_date)
 
 
 @router.get("/predictions", response_model=PredictionListResponse)
